@@ -1,9 +1,8 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -49,25 +48,19 @@ var (
 			return true
 		},
 	}
+	roomCounter = 0
+	roomMu      sync.Mutex
 )
 
-func newRoomID(length int) string {
-	if length < 4 {
-		length = 4
-	}
-	b := make([]byte, 12)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	id := base64.RawURLEncoding.EncodeToString(b)
-	if len(id) > length {
-		id = id[:length]
-	}
-	return id
+func newRoomID() string {
+	roomMu.Lock()
+	defer roomMu.Unlock()
+	roomCounter++
+	return fmt.Sprintf("%04d", roomCounter)
 }
 
 func (h *Hub) CreateRoom() *Room {
-	id := newRoomID(10)
+	id := newRoomID()
 	room := &Room{
 		id:         id,
 		clients:    make(map[*Client]bool),
