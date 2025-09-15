@@ -85,6 +85,16 @@ func (h *Hub) GetRoom(id string) (*Room, bool) {
 	return r, ok
 }
 
+func (h *Hub) GetAllRoomIDs() []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	rooms := make([]string, 0, len(h.rooms))
+	for _, room := range h.rooms {
+		rooms = append(rooms, room.id)
+	}
+	return rooms
+}
+
 func (h *Hub) DeleteRoom(id string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -126,6 +136,13 @@ func createRoomHandler(w http.ResponseWriter, r *http.Request) {
 	room := hub.CreateRoom()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"roomID": room.id})
+}
+
+// GET /rooms
+func getAllRoomsHandler(w http.ResponseWriter, r *http.Request) {
+	rooms := hub.GetAllRoomIDs()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string][]string{"rooms": rooms})
 }
 
 // GET /ws/{roomID}
@@ -232,6 +249,7 @@ func (c *Client) writePump() {
 func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/rooms", createRoomHandler).Methods("POST")
+	r.HandleFunc("/rooms", getAllRoomsHandler).Methods("GET")
 	r.HandleFunc("/ws/{roomID}", wsHandler).Methods("GET")
 
 	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
