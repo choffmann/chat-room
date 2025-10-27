@@ -40,6 +40,7 @@ type Message struct {
 
 type RoomResponse struct {
 	ID             uint           `json:"id"`
+	UserCount      int            `json:"onlineUser"`
 	AdditionalInfo AdditionalInfo `json:"additionalInfo,omitempty"`
 }
 
@@ -91,7 +92,7 @@ func createRoomHandler(w http.ResponseWriter, r *http.Request) {
 func getAllRoomsHandler(w http.ResponseWriter, r *http.Request) {
 	rooms := hub.GetAllRoomIDs()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string][]uint{"rooms": rooms})
+	json.NewEncoder(w).Encode(map[string][]RoomResponse{"rooms": rooms})
 }
 
 // GET /rooms/{roomID}

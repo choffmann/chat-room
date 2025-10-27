@@ -52,12 +52,16 @@ func (h *Hub) GetRoom(id uint) (*Room, bool) {
 	return r, ok
 }
 
-func (h *Hub) GetAllRoomIDs() []uint {
+func (h *Hub) GetAllRoomIDs() []RoomResponse {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	rooms := make([]uint, 0, len(h.rooms))
+	rooms := make([]RoomResponse, 0, len(h.rooms))
 	for _, room := range h.rooms {
-		rooms = append(rooms, room.id)
+		rooms = append(rooms, RoomResponse{
+			ID:             room.id,
+			AdditionalInfo: room.additionalInfo,
+			UserCount:      len(room.clients),
+		})
 	}
 	return rooms
 }
