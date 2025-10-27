@@ -2,10 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -78,6 +79,7 @@ func createRoomHandler(w http.ResponseWriter, r *http.Request) {
 	var additionalInfo AdditionalInfo
 	err := decoder.Decode(&additionalInfo)
 	if err != nil {
+		logger.Warn("failed to decode additional room info", "remoteAddr", r.RemoteAddr, "error", err)
 		additionalInfo = map[string]any{}
 	}
 	room := hub.CreateRoom(additionalInfo)
@@ -97,12 +99,14 @@ func getRoomIDHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
 	if err != nil {
+		logger.Warn("invalid room id requested", "roomID", vars["roomID"], "remoteAddr", r.RemoteAddr, "error", err)
 		http.Error(w, "can't parse room id to uint", http.StatusBadRequest)
 		return
 	}
 
 	room, ok := hub.GetRoom(uint(roomID))
 	if !ok {
+		logger.Warn("room not found", "roomID", roomID, "remoteAddr", r.RemoteAddr)
 		http.Error(w, "room not found", http.StatusNotFound)
 		return
 	}
@@ -119,6 +123,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
 	if err != nil {
+		logger.Warn("invalid room id for websocket join", "roomID", vars["roomID"], "remoteAddr", r.RemoteAddr, "error", err)
 		http.Error(w, "can't parse room id to uint", http.StatusBadRequest)
 		return
 	}
@@ -136,13 +141,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	room, ok := hub.GetRoom(uint(roomID))
 	if !ok {
+		logger.Warn("websocket join attempted for missing room", "roomID", roomID, "remoteAddr", r.RemoteAddr)
 		http.Error(w, "room not found", http.StatusNotFound)
 		return
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println("upgrade:", err)
+		logger.Error("websocket upgrade failed", "roomID", roomID, "userID", user.ID, "userName", user.Name, "error", err)
 		return
 	}
 
@@ -154,7 +160,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	room.register <- client
-	log.Printf("new client %s with id %s joined room %d", user.Name, user.ID, roomID)
+	logger.Info("client joined room", "roomID", roomID, "userID", user.ID, "userName", user.Name)
 
 	sysUser := User{
 		ID:   uuid.New(),
@@ -193,7 +199,7 @@ func (c *Client) readPump() {
 		mt, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) && !strings.Contains(err.Error(), "use of closed network connection") {
-				log.Println("read:", err)
+				logger.Warn("websocket read failed", "roomID", c.room.id, "userID", c.user.ID, "error", err)
 			}
 			break
 		}
@@ -209,7 +215,7 @@ func (c *Client) readPump() {
 		}
 		b, _ := json.Marshal(payload)
 		c.room.broadcast <- b
-		log.Printf("new message recieved. message: '%s', user: '%s' ", payload.Message, c.user.ID)
+		logger.Info("new message received", "roomID", c.room.id, "userID", c.user.ID, "message", payload.Message)
 	}
 }
 
@@ -229,12 +235,14 @@ func (c *Client) writePump() {
 				return
 			}
 			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				logger.Warn("failed to write websocket message", "roomID", c.room.id, "userID", c.user.ID, "error", err)
 				return
 			}
 
 		case <-ticker.C:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				logger.Warn("failed to send websocket ping", "roomID", c.room.id, "userID", c.user.ID, "error", err)
 				return
 			}
 		}
@@ -262,6 +270,10 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	log.Println("listening on :8080")
-	log.Fatal(srv.ListenAndServe())
+	logger.Info("server listening", "addr", srv.Addr)
+
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		logger.Error("server stopped unexpectedly", "error", err)
+		os.Exit(1)
+	}
 }

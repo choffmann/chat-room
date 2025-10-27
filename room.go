@@ -1,9 +1,6 @@
 package main
 
-import (
-	"log"
-	"sync"
-)
+import "sync"
 
 type Hub struct {
 	mu    sync.RWMutex
@@ -39,7 +36,7 @@ func (h *Hub) CreateRoom(additionalInfo AdditionalInfo) *Room {
 		additionalInfo: additionalInfo,
 	}
 
-	log.Printf("creating new room with id: %d", id)
+	logger.Info("creating new room", "roomID", id)
 	h.mu.Lock()
 	h.rooms[id] = room
 	h.mu.Unlock()
@@ -66,7 +63,7 @@ func (h *Hub) GetAllRoomIDs() []uint {
 }
 
 func (h *Hub) DeleteRoom(id uint) {
-	log.Printf("delete room with id: %d", id)
+	logger.Info("deleting room", "roomID", id)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.rooms, id)
