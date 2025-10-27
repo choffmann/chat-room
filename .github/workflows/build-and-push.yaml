@@ -1,0 +1,78 @@
+name: Build and Push Docker Image
+"on":
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The release version"
+        required: true
+  push:
+    branches:
+      - main
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      actions: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Extract branch name
+        shell: bash
+        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+        id: extract_branch
+
+      - name: Extract version from branch name (for develop branche)
+        if: startsWith(steps.extract_branch.outputs.branch, 'main')
+        run: |
+          BRANCH_NAME="${{ steps.extract_branch.outputs.branch }}"
+          VERSION=$(git describe --tags --always)
+          echo "RELEASE_VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Extract version from input (for manual workflow dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "RELEASE_VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+          
+      - name: Set commit sha
+        run: |
+          echo "COMMIT_SHA=$(git rev-parse --short $GITHUB_SHA)" >> $GITHUB_ENV
+
+      - name: get build time
+        run: |
+          echo "BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >>${GITHUB_ENV}
+
+          
+      - name: Build and push Version
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-args: |
+            APP_VERSION="${{env.RELEASE_VERSION}}"
+            APP_GIT_COMMIT=${{env.COMMIT_SHA}}
+            APP_GIT_BRANCH=${{steps.extract_branch.outputs.branch}}
+            APP_BUILD_TIME=${{env.BUILD_TIME}}
+            APP_GIT_REPOSITORY=${{github.repository}}
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ env.COMMIT_SHA }}
+            ghcr.io/${{ github.repository }}:latest
