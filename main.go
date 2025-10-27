@@ -16,6 +16,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type AdditionalInfo = map[string]any
+
 type Client struct {
 	room *Room
 	conn *websocket.Conn
@@ -33,6 +35,11 @@ type Message struct {
 	Message     string    `json:"message"`
 	Timestamp   time.Time `json:"timestamp"`
 	User        User      `json:"user"`
+}
+
+type RoomResponse struct {
+	ID             uint           `json:"id"`
+	AdditionalInfo AdditionalInfo `json:"additionalInfo,omitempty"`
 }
 
 var (
@@ -67,7 +74,13 @@ var (
 
 // POST /rooms
 func createRoomHandler(w http.ResponseWriter, r *http.Request) {
-	room := hub.CreateRoom()
+	decoder := json.NewDecoder(r.Body)
+	var additionalInfo AdditionalInfo
+	err := decoder.Decode(&additionalInfo)
+	if err != nil {
+		additionalInfo = map[string]any{}
+	}
+	room := hub.CreateRoom(additionalInfo)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]uint{"roomID": room.id})
 }
@@ -77,6 +90,28 @@ func getAllRoomsHandler(w http.ResponseWriter, r *http.Request) {
 	rooms := hub.GetAllRoomIDs()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string][]uint{"rooms": rooms})
+}
+
+// GET /rooms/{roomID}
+func getRoomIDHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
+	if err != nil {
+		http.Error(w, "can't parse room id to uint", http.StatusBadRequest)
+		return
+	}
+
+	room, ok := hub.GetRoom(uint(roomID))
+	if !ok {
+		http.Error(w, "room not found", http.StatusNotFound)
+		return
+	}
+
+	payload := RoomResponse{
+		ID:             room.id,
+		AdditionalInfo: room.additionalInfo,
+	}
+	json.NewEncoder(w).Encode(payload)
 }
 
 // GET /join/{roomID}?user=""
@@ -210,6 +245,7 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/rooms", createRoomHandler).Methods("POST")
 	r.HandleFunc("/rooms", getAllRoomsHandler).Methods("GET")
+	r.HandleFunc("/rooms/{roomID}", getRoomIDHandler).Methods("GET")
 	r.HandleFunc("/join/{roomID}", wsHandler).Methods("GET")
 	r.HandleFunc("/info", getInfoHandler).Methods("GET")
 

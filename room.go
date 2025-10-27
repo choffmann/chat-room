@@ -11,12 +11,13 @@ type Hub struct {
 }
 
 type Room struct {
-	id         uint
-	clients    map[*Client]bool
-	broadcast  chan []byte
-	register   chan *Client
-	unregister chan *Client
-	closed     chan struct{}
+	id             uint
+	clients        map[*Client]bool
+	broadcast      chan []byte
+	register       chan *Client
+	unregister     chan *Client
+	closed         chan struct{}
+	additionalInfo AdditionalInfo
 }
 
 func newRoomID() uint {
@@ -26,15 +27,16 @@ func newRoomID() uint {
 	return uint(roomCounter)
 }
 
-func (h *Hub) CreateRoom() *Room {
+func (h *Hub) CreateRoom(additionalInfo AdditionalInfo) *Room {
 	id := newRoomID()
 	room := &Room{
-		id:         id,
-		clients:    make(map[*Client]bool),
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		closed:     make(chan struct{}),
+		id:             id,
+		clients:        make(map[*Client]bool),
+		broadcast:      make(chan []byte),
+		register:       make(chan *Client),
+		unregister:     make(chan *Client),
+		closed:         make(chan struct{}),
+		additionalInfo: additionalInfo,
 	}
 
 	log.Printf("creating new room with id: %d", id)
