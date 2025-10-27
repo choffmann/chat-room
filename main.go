@@ -65,6 +65,22 @@ var (
 	}
 )
 
+var (
+	version       string = "unknown"
+	gitCommit     string = "unknown"
+	gitBranch     string = "unknown"
+	gitRepository string = "unknown"
+	buildTime     string = "unknown"
+)
+
+type Info struct {
+	Version       string    `json:"version"`
+	GitCommit     string    `json:"commit"`
+	GitBranch     string    `json:"branch"`
+	GitRepository string    `json:"repository"`
+	BuildTime     time.Time `json:"build_time"`
+}
+
 func newRoomID() uint {
 	roomMu.Lock()
 	defer roomMu.Unlock()
@@ -144,6 +160,31 @@ func (r *Room) run() {
 	}
 }
 
+// GET /info
+func getInfoHandler(w http.ResponseWriter, r *http.Request) {
+	var bt time.Time
+	if buildTime == "" || buildTime == "unkown" || buildTime == "now" {
+		bt = time.Now()
+	} else {
+		var err error
+		bt, err = time.Parse("2006-01-02T15:04:05Z", buildTime)
+		if err != nil {
+			http.Error(w, "can't parse build time", http.StatusInternalServerError)
+		}
+	}
+
+	info := Info{
+		Version:       version,
+		GitCommit:     gitCommit,
+		GitBranch:     gitBranch,
+		GitRepository: gitRepository,
+		BuildTime:     bt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(info)
+}
+
 // POST /rooms
 func createRoomHandler(w http.ResponseWriter, r *http.Request) {
 	room := hub.CreateRoom()
@@ -163,7 +204,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
 	if err != nil {
-		http.Error(w, "can't parse room id to uint", http.StatusNotFound)
+		http.Error(w, "can't parse room id to uint", http.StatusBadRequest)
 		return
 	}
 
@@ -280,6 +321,7 @@ func main() {
 	r.HandleFunc("/rooms", createRoomHandler).Methods("POST")
 	r.HandleFunc("/rooms", getAllRoomsHandler).Methods("GET")
 	r.HandleFunc("/join/{roomID}", wsHandler).Methods("GET")
+	r.HandleFunc("/info", getInfoHandler).Methods("GET")
 
 	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
