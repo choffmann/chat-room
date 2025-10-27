@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,7 +16,7 @@ import (
 )
 
 type Room struct {
-	id         string
+	id         uint
 	clients    map[*Client]bool
 	broadcast  chan []byte
 	register   chan *Client
@@ -25,6 +27,7 @@ type Room struct {
 type Client struct {
 	room *Room
 	conn *websocket.Conn
+	user string
 	send chan []byte
 }
 
@@ -32,15 +35,16 @@ type Message struct {
 	MessageType string    `json:"type"`
 	Message     string    `json:"message"`
 	Timestamp   time.Time `json:"timestamp"`
+	User        *string   `json:"user"`
 }
 
 type Hub struct {
 	mu    sync.RWMutex
-	rooms map[string]*Room
+	rooms map[uint]*Room
 }
 
 var (
-	hub      = &Hub{rooms: make(map[string]*Room)}
+	hub      = &Hub{rooms: make(map[uint]*Room)}
 	upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
@@ -48,15 +52,24 @@ var (
 			return true
 		},
 	}
-	roomCounter = 0
-	roomMu      sync.Mutex
+	roomCounter     = 0
+	roomMu          sync.Mutex
+	defaultUserName = []string{
+		"Toni Tester",
+		"Harald Hüftschmerz",
+		"Andre Android",
+		"Hans Hotfix",
+		"Peter Push",
+		"Rebase Randy",
+		"Prof. Prokrastination",
+	}
 )
 
-func newRoomID() string {
+func newRoomID() uint {
 	roomMu.Lock()
 	defer roomMu.Unlock()
 	roomCounter++
-	return fmt.Sprintf("%04d", roomCounter)
+	return uint(roomCounter)
 }
 
 func (h *Hub) CreateRoom() *Room {
@@ -78,24 +91,24 @@ func (h *Hub) CreateRoom() *Room {
 	return room
 }
 
-func (h *Hub) GetRoom(id string) (*Room, bool) {
+func (h *Hub) GetRoom(id uint) (*Room, bool) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	r, ok := h.rooms[id]
 	return r, ok
 }
 
-func (h *Hub) GetAllRoomIDs() []string {
+func (h *Hub) GetAllRoomIDs() []uint {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	rooms := make([]string, 0, len(h.rooms))
+	rooms := make([]uint, 0, len(h.rooms))
 	for _, room := range h.rooms {
 		rooms = append(rooms, room.id)
 	}
 	return rooms
 }
 
-func (h *Hub) DeleteRoom(id string) {
+func (h *Hub) DeleteRoom(id uint) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.rooms, id)
@@ -135,22 +148,32 @@ func (r *Room) run() {
 func createRoomHandler(w http.ResponseWriter, r *http.Request) {
 	room := hub.CreateRoom()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"roomID": room.id})
+	json.NewEncoder(w).Encode(map[string]uint{"roomID": room.id})
 }
 
 // GET /rooms
 func getAllRoomsHandler(w http.ResponseWriter, r *http.Request) {
 	rooms := hub.GetAllRoomIDs()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string][]string{"rooms": rooms})
+	json.NewEncoder(w).Encode(map[string][]uint{"rooms": rooms})
 }
 
-// GET /ws/{roomID}
+// GET /join/{roomID}?user=""
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	roomID := vars["roomID"]
+	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
+	if err != nil {
+		http.Error(w, "can't parse room id to uint", http.StatusNotFound)
+		return
+	}
 
-	room, ok := hub.GetRoom(roomID)
+	user := r.URL.Query().Get("user")
+
+	if user == "" {
+		user = defaultUserName[rand.Intn(len(defaultUserName))]
+	}
+
+	room, ok := hub.GetRoom(uint(roomID))
 	if !ok {
 		http.Error(w, "room not found", http.StatusNotFound)
 		return
@@ -165,19 +188,24 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	client := &Client{
 		room: room,
 		conn: conn,
+		user: user,
 		send: make(chan []byte, 256),
 	}
 
 	room.register <- client
 
+	sysUser := "system"
 	hello := Message{
 		MessageType: "system",
-		Message:     "joined room " + roomID,
+		Message:     fmt.Sprintf("%s joined room %d", user, roomID),
 		Timestamp:   time.Now(),
+		User:        &sysUser,
 	}
 
 	b, _ := json.Marshal(hello)
-	client.send <- b
+	for c := range room.clients {
+		c.send <- b
+	}
 
 	go client.writePump()
 	client.readPump()
@@ -212,6 +240,7 @@ func (c *Client) readPump() {
 			MessageType: "message",
 			Message:     string(message),
 			Timestamp:   time.Now(),
+			User:        &c.user,
 		}
 		b, _ := json.Marshal(payload)
 		c.room.broadcast <- b
@@ -250,7 +279,7 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/rooms", createRoomHandler).Methods("POST")
 	r.HandleFunc("/rooms", getAllRoomsHandler).Methods("GET")
-	r.HandleFunc("/ws/{roomID}", wsHandler).Methods("GET")
+	r.HandleFunc("/join/{roomID}", wsHandler).Methods("GET")
 
 	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
