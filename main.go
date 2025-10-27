@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
@@ -27,15 +28,20 @@ type Room struct {
 type Client struct {
 	room *Room
 	conn *websocket.Conn
-	user string
+	user User
 	send chan []byte
+}
+
+type User struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
 }
 
 type Message struct {
 	MessageType string    `json:"type"`
 	Message     string    `json:"message"`
 	Timestamp   time.Time `json:"timestamp"`
-	User        *string   `json:"user"`
+	User        User      `json:"user"`
 }
 
 type Hub struct {
@@ -99,6 +105,7 @@ func (h *Hub) CreateRoom() *Room {
 		closed:     make(chan struct{}),
 	}
 
+	log.Printf("creating new room with id: %d", id)
 	h.mu.Lock()
 	h.rooms[id] = room
 	h.mu.Unlock()
@@ -125,6 +132,7 @@ func (h *Hub) GetAllRoomIDs() []uint {
 }
 
 func (h *Hub) DeleteRoom(id uint) {
+	log.Printf("delete room with id: %d", id)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.rooms, id)
@@ -208,10 +216,15 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := r.URL.Query().Get("user")
+	userName := r.URL.Query().Get("user")
 
-	if user == "" {
-		user = defaultUserName[rand.Intn(len(defaultUserName))]
+	if userName == "" {
+		userName = defaultUserName[rand.Intn(len(defaultUserName))]
+	}
+
+	user := User{
+		ID:   uuid.New(),
+		Name: userName,
 	}
 
 	room, ok := hub.GetRoom(uint(roomID))
@@ -234,13 +247,17 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	room.register <- client
+	log.Printf("new client %s with id %s joined room %d", user.Name, user.ID, roomID)
 
-	sysUser := "system"
+	sysUser := User{
+		ID:   uuid.New(),
+		Name: "system",
+	}
 	hello := Message{
 		MessageType: "system",
-		Message:     fmt.Sprintf("%s joined room %d", user, roomID),
+		Message:     fmt.Sprintf("%s joined room %d", user.Name, roomID),
 		Timestamp:   time.Now(),
-		User:        &sysUser,
+		User:        sysUser,
 	}
 
 	b, _ := json.Marshal(hello)
@@ -281,10 +298,11 @@ func (c *Client) readPump() {
 			MessageType: "message",
 			Message:     string(message),
 			Timestamp:   time.Now(),
-			User:        &c.user,
+			User:        c.user,
 		}
 		b, _ := json.Marshal(payload)
 		c.room.broadcast <- b
+		log.Printf("new message recieved. message: '%s', user: '%s' ", payload.Message, c.user.ID)
 	}
 }
 
