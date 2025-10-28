@@ -53,8 +53,12 @@ var (
 			return true
 		},
 	}
-	roomCounter     = 0
-	roomMu          sync.Mutex
+	roomCounter = 0
+	roomMu      sync.Mutex
+	systemUser  = User{
+		ID:   uuid.New(),
+		Name: "system",
+	}
 	defaultUserName = []string{
 		"Toni Tester",
 		"Harald Hüftschmerz",
@@ -63,10 +67,27 @@ var (
 		"Peter Push",
 		"Rebase Randy",
 		"Prof. Prokrastination",
-	}
-	systemUser = User{
-		ID:   uuid.New(),
-		Name: "system",
+		"Mira Mobil",
+		"Lars Launcher",
+		"Paul Pixel",
+		"Nora Nexus",
+		"Timo Touch",
+		"Benny Bluetooth",
+		"Hanna Hotspot",
+		"Pixel Peter",
+		"APK Alex",
+		"Touchscreen Toni",
+		"Kotlin Kevin",
+		"Async Andy",
+		"Compose Chris",
+		"Composable Clara",
+		"SideEffect Susi",
+		"Gradle Gero",
+		"Activity Anni",
+		"Manifest Mona",
+		"Resource Rhea",
+		"ViewModel Viktor",
+		"Intent Ingo",
 	}
 )
 
