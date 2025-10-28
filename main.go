@@ -64,6 +64,10 @@ var (
 		"Rebase Randy",
 		"Prof. Prokrastination",
 	}
+	systemUser = User{
+		ID:   uuid.New(),
+		Name: "system",
+	}
 )
 
 var (
@@ -160,18 +164,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		send: make(chan []byte, 256),
 	}
 
-	room.register <- client
-	logger.Info("client joined room", "roomID", roomID, "userID", user.ID, "userName", user.Name)
-
-	sysUser := User{
-		ID:   uuid.New(),
-		Name: "system",
-	}
 	hello := Message{
 		MessageType: "system",
 		Message:     fmt.Sprintf("%s joined room %d", user.Name, roomID),
 		Timestamp:   time.Now(),
-		User:        sysUser,
+		User:        systemUser,
 	}
 
 	b, _ := json.Marshal(hello)
@@ -205,6 +202,14 @@ func (c *Client) readPump() {
 		if err != nil {
 			if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) && !strings.Contains(err.Error(), "use of closed network connection") {
 				logger.Warn("websocket read failed", "roomID", c.room.id, "userID", c.user.ID, "error", err)
+				leaveMsg := Message{
+					MessageType: "system",
+					Message:     fmt.Sprintf("%s left room %d", c.user.Name, c.room.id),
+					Timestamp:   time.Now(),
+					User:        systemUser,
+				}
+				b, _ := json.Marshal(leaveMsg)
+				c.room.broadcast <- b
 			}
 			break
 		}
