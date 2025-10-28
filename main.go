@@ -178,6 +178,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	for c := range room.clients {
 		c.send <- b
 	}
+	// client.send <- b
+
+	room.register <- client
+	logger.Info("client joined room", "roomID", roomID, "userID", user.ID, "userName", user.Name)
 
 	go client.writePump()
 	client.readPump()
