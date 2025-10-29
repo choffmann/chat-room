@@ -193,10 +193,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	b, _ := json.Marshal(hello)
-	for c := range room.clients {
-		c.send <- b
-	}
-	// client.send <- b
+	room.broadcast <- b
 
 	room.register <- client
 	logger.Info("client joined room", "roomID", roomID, "userID", user.ID, "userName", user.Name)
