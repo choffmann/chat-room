@@ -1,4 +1,4 @@
-module github.com/choffmann/chat-app
+module github.com/choffmann/chat-room
 
 go 1.25.0
 
