@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	roomTimeout         = 1 * time.Hour
-	roomTimeoutInterval = 30 * time.Minute
+	roomTimeout         = 65 * time.Hour
+	roomTimeoutInterval = 25 * time.Second
 )
 
 type Hub struct {
@@ -18,12 +18,14 @@ type Hub struct {
 
 type Room struct {
 	id             uint
+	clientsMu      sync.RWMutex
 	clients        map[*Client]bool
 	broadcast      chan []byte
 	register       chan *Client
 	unregister     chan *Client
 	closed         chan struct{}
 	shutdown       chan struct{}
+	shutdownOnce   sync.Once
 	activityMu     sync.RWMutex
 	lastActivity   time.Time
 	additionalInfo AdditionalInfo
@@ -74,7 +76,7 @@ func (h *Hub) GetAllRoomIDs() []RoomResponse {
 		rooms = append(rooms, RoomResponse{
 			ID:             room.id,
 			AdditionalInfo: room.additionalInfo,
-			UserCount:      len(room.clients),
+			UserCount:      room.GetClientCount(),
 		})
 	}
 	return rooms
@@ -94,8 +96,43 @@ func (r *Room) UpdateActivityNow() {
 }
 
 func (r *Room) disconnectAllClients() {
+	r.clientsMu.Lock()
+	defer r.clientsMu.Unlock()
 	for c := range r.clients {
-		close(c.send)
+		c.closeSend()
+	}
+}
+
+func (r *Room) GetClientCount() int {
+	r.clientsMu.RLock()
+	defer r.clientsMu.RUnlock()
+	return len(r.clients)
+}
+
+func (r *Room) tryBroadcast(msg []byte) bool {
+	select {
+	case r.broadcast <- msg:
+		return true
+	case <-r.shutdown:
+		return false
+	}
+}
+
+func (r *Room) tryRegister(c *Client) bool {
+	select {
+	case r.register <- c:
+		return true
+	case <-r.shutdown:
+		return false
+	}
+}
+
+func (r *Room) tryUnregister(c *Client) bool {
+	select {
+	case r.unregister <- c:
+		return true
+	case <-r.shutdown:
+		return false
 	}
 }
 
@@ -115,26 +152,48 @@ func (r *Room) run() {
 			return
 
 		case c := <-r.register:
+			r.clientsMu.Lock()
 			r.clients[c] = true
+			r.clientsMu.Unlock()
+			r.UpdateActivityNow()
+
 		case c := <-r.unregister:
+			r.clientsMu.Lock()
 			if _, ok := r.clients[c]; ok {
 				delete(r.clients, c)
-				close(c.send)
-				if len(r.clients) == 0 {
-					hub.DeleteRoom(r.id)
-					return
-				}
+				c.closeSend()
+			} else {
+				r.clientsMu.Unlock()
 			}
 
 		case msg := <-r.broadcast:
 			r.UpdateActivityNow()
+			r.clientsMu.RLock()
+			// Create a snapshot of clients to avoid holding lock during send
+			clientsList := make([]*Client, 0, len(r.clients))
 			for c := range r.clients {
+				clientsList = append(clientsList, c)
+			}
+			r.clientsMu.RUnlock()
+
+			// Now send to all clients
+			failedClients := make([]*Client, 0)
+			for _, c := range clientsList {
 				select {
 				case c.send <- msg:
 				default:
-					delete(r.clients, c)
-					close(c.send)
+					failedClients = append(failedClients, c)
 				}
+			}
+
+			// Remove failed clients
+			if len(failedClients) > 0 {
+				r.clientsMu.Lock()
+				for _, c := range failedClients {
+					delete(r.clients, c)
+					c.closeSend()
+				}
+				r.clientsMu.Unlock()
 			}
 		}
 	}
@@ -151,8 +210,10 @@ func (r *Room) deleteRoomWithNoActivity(ctx context.Context) {
 			timeSinceActivity := time.Since(r.lastActivity)
 			r.activityMu.RUnlock()
 
-			if timeSinceActivity > roomTimeoutInterval {
-				close(r.shutdown)
+			if timeSinceActivity > roomTimeout {
+				r.shutdownOnce.Do(func() {
+					close(r.shutdown)
+				})
 				r.disconnectAllClients()
 				hub.DeleteRoom(r.id)
 				logger.Info("remove room due to timeout activity", "roomID", r.id)
