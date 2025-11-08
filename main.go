@@ -28,10 +28,13 @@ const (
 type AdditionalInfo = map[string]any
 
 type Client struct {
-	room *Room
-	conn *websocket.Conn
-	user User
-	send chan []byte
+	room         *Room
+	conn         *websocket.Conn
+	user         User
+	send         chan []byte
+	closeMu      sync.Mutex
+	closed       bool
+	disconnected sync.Once
 }
 
 type User struct {
@@ -159,6 +162,34 @@ func getRoomIDHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(payload)
 }
 
+func (c *Client) closeSend() {
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+	if !c.closed {
+		close(c.send)
+		c.closed = true
+	}
+}
+
+func (c *Client) disconnect() {
+	c.disconnected.Do(func() {
+		leaveMsg := OutgoingMessage{
+			MessageType: SystemMessage,
+			Message:     fmt.Sprintf("%s left room %d", c.user.Name, c.room.id),
+			Timestamp:   time.Now(),
+			User:        systemUser,
+		}
+		b, _ := json.Marshal(leaveMsg)
+		if !c.room.tryBroadcast(b) {
+			logger.Debug("failed to broadcast leave message, room may be closing", "roomID", c.room.id)
+		}
+
+		if !c.room.tryUnregister(c) {
+			logger.Debug("failed to unregister client, room may be closing", "roomID", c.room.id, "userID", c.user.ID)
+		}
+	})
+}
+
 // GET /join/{roomID}?user=""
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -208,9 +239,15 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	b, _ := json.Marshal(hello)
-	room.broadcast <- b
+	if !room.tryBroadcast(b) {
+		logger.Warn("failed to broadcast join message, room may be closing", "roomID", roomID)
+	}
 
-	room.register <- client
+	if !room.tryRegister(client) {
+		logger.Warn("failed to register client, room may be closing", "roomID", roomID, "userID", user.ID)
+		conn.Close()
+		return
+	}
 	logger.Info("client joined room", "roomID", roomID, "userID", user.ID, "userName", user.Name)
 
 	go client.writePump()
@@ -219,7 +256,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 func (c *Client) readPump() {
 	defer func() {
-		c.room.unregister <- c
+		c.disconnect()
 		c.conn.Close()
 	}()
 
@@ -235,14 +272,6 @@ func (c *Client) readPump() {
 		if err := c.conn.ReadJSON(&message); err != nil {
 			if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) && !strings.Contains(err.Error(), "use of closed network connection") {
 				logger.Warn("websocket read failed", "roomID", c.room.id, "userID", c.user.ID, "error", err)
-				leaveMsg := OutgoingMessage{
-					MessageType: SystemMessage,
-					Message:     fmt.Sprintf("%s left room %d", c.user.Name, c.room.id),
-					Timestamp:   time.Now(),
-					User:        systemUser,
-				}
-				b, _ := json.Marshal(leaveMsg)
-				c.room.broadcast <- b
 			}
 			break
 		}
@@ -255,7 +284,10 @@ func (c *Client) readPump() {
 			AdditionalInfo: message.AdditionalInfo,
 		}
 		b, _ := json.Marshal(payload)
-		c.room.broadcast <- b
+		if !c.room.tryBroadcast(b) {
+			logger.Warn("failed to broadcast message, room may be closing", "roomID", c.room.id, "userID", c.user.ID)
+			break
+		}
 		logger.Info("new message received", "roomID", c.room.id, "userID", c.user.ID, "message", payload.Message)
 	}
 }
@@ -264,6 +296,7 @@ func (c *Client) writePump() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer func() {
 		ticker.Stop()
+		c.disconnect()
 		c.conn.Close()
 	}()
 
