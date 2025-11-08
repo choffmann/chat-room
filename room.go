@@ -1,6 +1,15 @@
 package main
 
-import "sync"
+import (
+	"context"
+	"sync"
+	"time"
+)
+
+const (
+	roomTimeout         = 1 * time.Hour
+	roomTimeoutInterval = 30 * time.Minute
+)
 
 type Hub struct {
 	mu    sync.RWMutex
@@ -14,6 +23,9 @@ type Room struct {
 	register       chan *Client
 	unregister     chan *Client
 	closed         chan struct{}
+	shutdown       chan struct{}
+	activityMu     sync.RWMutex
+	lastActivity   time.Time
 	additionalInfo AdditionalInfo
 }
 
@@ -33,6 +45,8 @@ func (h *Hub) CreateRoom(additionalInfo AdditionalInfo) *Room {
 		register:       make(chan *Client),
 		unregister:     make(chan *Client),
 		closed:         make(chan struct{}),
+		shutdown:       make(chan struct{}),
+		lastActivity:   time.Now(),
 		additionalInfo: additionalInfo,
 	}
 
@@ -73,11 +87,33 @@ func (h *Hub) DeleteRoom(id uint) {
 	delete(h.rooms, id)
 }
 
+func (r *Room) UpdateActivityNow() {
+	r.activityMu.Lock()
+	defer r.activityMu.Unlock()
+	r.lastActivity = time.Now()
+}
+
+func (r *Room) disconnectAllClients() {
+	for c := range r.clients {
+		close(c.send)
+	}
+}
+
 func (r *Room) run() {
-	defer close(r.closed)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		close(r.closed)
+		cancel()
+	}()
+
+	go r.deleteRoomWithNoActivity(ctx)
 
 	for {
 		select {
+		case <-r.shutdown:
+			logger.Info("room shutdown signal received", "roomID", r.id)
+			return
+
 		case c := <-r.register:
 			r.clients[c] = true
 		case c := <-r.unregister:
@@ -91,6 +127,7 @@ func (r *Room) run() {
 			}
 
 		case msg := <-r.broadcast:
+			r.UpdateActivityNow()
 			for c := range r.clients {
 				select {
 				case c.send <- msg:
@@ -99,6 +136,32 @@ func (r *Room) run() {
 					close(c.send)
 				}
 			}
+		}
+	}
+}
+
+func (r *Room) deleteRoomWithNoActivity(ctx context.Context) {
+	ticker := time.NewTicker(roomTimeoutInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			r.activityMu.RLock()
+			timeSinceActivity := time.Since(r.lastActivity)
+			r.activityMu.RUnlock()
+
+			if timeSinceActivity > roomTimeoutInterval {
+				close(r.shutdown)
+				r.disconnectAllClients()
+				hub.DeleteRoom(r.id)
+				logger.Info("remove room due to timeout activity", "roomID", r.id)
+				return
+			}
+
+		case <-ctx.Done():
+			logger.Debug("stopping delete room scheduler")
+			return
 		}
 	}
 }
