@@ -17,6 +17,14 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type MessageType string
+
+const (
+	SystemMessage MessageType = "system"
+	UserMessage   MessageType = "message"
+	ImageMessage  MessageType = "image"
+)
+
 type AdditionalInfo = map[string]any
 
 type Client struct {
@@ -31,11 +39,18 @@ type User struct {
 	Name string    `json:"name"`
 }
 
-type Message struct {
-	MessageType string    `json:"type"`
-	Message     string    `json:"message"`
-	Timestamp   time.Time `json:"timestamp"`
-	User        User      `json:"user"`
+type OutgoingMessage struct {
+	MessageType    MessageType    `json:"type"`
+	Message        string         `json:"message"`
+	Timestamp      time.Time      `json:"timestamp"`
+	User           User           `json:"user"`
+	AdditionalInfo AdditionalInfo `json:"additionalInfo"`
+}
+
+type IncomingMessage struct {
+	MessageType    MessageType    `json:"type"`
+	Message        string         `json:"message"`
+	AdditionalInfo AdditionalInfo `json:"additionalInfo,omitempty"`
 }
 
 type RoomResponse struct {
@@ -185,8 +200,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		send: make(chan []byte, 256),
 	}
 
-	hello := Message{
-		MessageType: "system",
+	hello := OutgoingMessage{
+		MessageType: SystemMessage,
 		Message:     fmt.Sprintf("%s joined room %d", user.Name, roomID),
 		Timestamp:   time.Now(),
 		User:        systemUser,
@@ -216,12 +231,12 @@ func (c *Client) readPump() {
 	})
 
 	for {
-		mt, message, err := c.conn.ReadMessage()
-		if err != nil {
+		var message IncomingMessage
+		if err := c.conn.ReadJSON(&message); err != nil {
 			if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) && !strings.Contains(err.Error(), "use of closed network connection") {
 				logger.Warn("websocket read failed", "roomID", c.room.id, "userID", c.user.ID, "error", err)
-				leaveMsg := Message{
-					MessageType: "system",
+				leaveMsg := OutgoingMessage{
+					MessageType: SystemMessage,
 					Message:     fmt.Sprintf("%s left room %d", c.user.Name, c.room.id),
 					Timestamp:   time.Now(),
 					User:        systemUser,
@@ -231,15 +246,13 @@ func (c *Client) readPump() {
 			}
 			break
 		}
-		if mt != websocket.TextMessage {
-			continue
-		}
 
-		payload := Message{
-			MessageType: "message",
-			Message:     string(message),
-			Timestamp:   time.Now(),
-			User:        c.user,
+		payload := OutgoingMessage{
+			MessageType:    message.MessageType,
+			Message:        message.Message,
+			Timestamp:      time.Now(),
+			User:           c.user,
+			AdditionalInfo: message.AdditionalInfo,
 		}
 		b, _ := json.Marshal(payload)
 		c.room.broadcast <- b
