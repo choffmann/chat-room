@@ -159,6 +159,7 @@ func getRoomIDHandler(w http.ResponseWriter, r *http.Request) {
 		ID:             room.id,
 		AdditionalInfo: room.additionalInfo,
 	}
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(payload)
 }
 
