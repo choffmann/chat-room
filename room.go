@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	roomTimeout         = 65 * time.Hour
+	roomTimeout         = 3 * time.Hour
 	roomTimeoutInterval = 25 * time.Second
 )
 
