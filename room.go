@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 )
@@ -79,6 +80,10 @@ func (h *Hub) GetAllRoomIDs() []RoomResponse {
 			UserCount:      room.GetClientCount(),
 		})
 	}
+
+	sort.Slice(rooms, func(i, j int) bool {
+		return rooms[i].ID < rooms[j].ID
+	})
 	return rooms
 }
 
