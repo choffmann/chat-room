@@ -95,6 +95,34 @@ func (r *Room) UpdateActivityNow() {
 	r.lastActivity = time.Now()
 }
 
+func (r *Room) UpdateAdditionalInfo(newInfo AdditionalInfo) {
+	r.activityMu.Lock()
+	defer r.activityMu.Unlock()
+	r.additionalInfo = newInfo
+}
+
+func (r *Room) PatchAdditionalInfo(updates AdditionalInfo) {
+	r.activityMu.Lock()
+	defer r.activityMu.Unlock()
+	if r.additionalInfo == nil {
+		r.additionalInfo = make(AdditionalInfo)
+	}
+	for key, value := range updates {
+		r.additionalInfo[key] = value
+	}
+}
+
+func (r *Room) GetAdditionalInfo() AdditionalInfo {
+	r.activityMu.RLock()
+	defer r.activityMu.RUnlock()
+	// Return a copy to prevent external modification
+	info := make(AdditionalInfo, len(r.additionalInfo))
+	for k, v := range r.additionalInfo {
+		info[k] = v
+	}
+	return info
+}
+
 func (r *Room) disconnectAllClients() {
 	r.clientsMu.Lock()
 	defer r.clientsMu.Unlock()

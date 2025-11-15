@@ -163,6 +163,80 @@ func getRoomIDHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(payload)
 }
 
+// PATCH /rooms/{roomID}
+func patchRoomHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
+	if err != nil {
+		logger.Warn("invalid room id for patch", "roomID", vars["roomID"], "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "can't parse room id to uint", http.StatusBadRequest)
+		return
+	}
+
+	room, ok := hub.GetRoom(uint(roomID))
+	if !ok {
+		logger.Warn("room not found for patch", "roomID", roomID, "remoteAddr", r.RemoteAddr)
+		http.Error(w, "room not found", http.StatusNotFound)
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	var updates AdditionalInfo
+	err = decoder.Decode(&updates)
+	if err != nil {
+		logger.Warn("failed to decode patch request body", "roomID", roomID, "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	room.PatchAdditionalInfo(updates)
+	logger.Info("room patched", "roomID", roomID)
+
+	payload := RoomResponse{
+		ID:             room.id,
+		AdditionalInfo: room.GetAdditionalInfo(),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(payload)
+}
+
+// PUT /rooms/{roomID}
+func putRoomHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
+	if err != nil {
+		logger.Warn("invalid room id for put", "roomID", vars["roomID"], "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "can't parse room id to uint", http.StatusBadRequest)
+		return
+	}
+
+	room, ok := hub.GetRoom(uint(roomID))
+	if !ok {
+		logger.Warn("room not found for put", "roomID", roomID, "remoteAddr", r.RemoteAddr)
+		http.Error(w, "room not found", http.StatusNotFound)
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	var newInfo AdditionalInfo
+	err = decoder.Decode(&newInfo)
+	if err != nil {
+		logger.Warn("failed to decode put request body", "roomID", roomID, "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	room.UpdateAdditionalInfo(newInfo)
+	logger.Info("room updated", "roomID", roomID)
+
+	payload := RoomResponse{
+		ID:             room.id,
+		AdditionalInfo: room.GetAdditionalInfo(),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(payload)
+}
+
 func (c *Client) closeSend() {
 	c.closeMu.Lock()
 	defer c.closeMu.Unlock()
@@ -329,6 +403,8 @@ func main() {
 	r.HandleFunc("/rooms", createRoomHandler).Methods("POST")
 	r.HandleFunc("/rooms", getAllRoomsHandler).Methods("GET")
 	r.HandleFunc("/rooms/{roomID}", getRoomIDHandler).Methods("GET")
+	r.HandleFunc("/rooms/{roomID}", patchRoomHandler).Methods("PATCH")
+	r.HandleFunc("/rooms/{roomID}", putRoomHandler).Methods("PUT")
 	r.HandleFunc("/join/{roomID}", wsHandler).Methods("GET")
 	r.HandleFunc("/info", getInfoHandler).Methods("GET")
 
