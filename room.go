@@ -94,6 +94,23 @@ func (h *Hub) DeleteRoom(id uint) {
 	delete(h.rooms, id)
 }
 
+func (h *Hub) GetAllUsersWithRooms() []UserWithRoom {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	usersWithRooms := make([]UserWithRoom, 0)
+	for roomID, room := range h.rooms {
+		users := room.GetUsers()
+		for _, user := range users {
+			usersWithRooms = append(usersWithRooms, UserWithRoom{
+				User:   user,
+				RoomID: roomID,
+			})
+		}
+	}
+	return usersWithRooms
+}
+
 func (r *Room) UpdateActivityNow() {
 	r.activityMu.Lock()
 	defer r.activityMu.Unlock()
@@ -140,6 +157,17 @@ func (r *Room) GetClientCount() int {
 	r.clientsMu.RLock()
 	defer r.clientsMu.RUnlock()
 	return len(r.clients)
+}
+
+func (r *Room) GetUsers() []User {
+	r.clientsMu.RLock()
+	defer r.clientsMu.RUnlock()
+
+	users := make([]User, 0, len(r.clients))
+	for client := range r.clients {
+		users = append(users, client.user)
+	}
+	return users
 }
 
 func (r *Room) tryBroadcast(msg []byte) bool {

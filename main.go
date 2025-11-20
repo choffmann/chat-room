@@ -38,8 +38,11 @@ type Client struct {
 }
 
 type User struct {
-	ID   uuid.UUID `json:"id"`
-	Name string    `json:"name"`
+	ID             uuid.UUID      `json:"id"`
+	FirstName      string         `json:"firstName,omitempty"`
+	LastName       string         `json:"lastName,omitempty"`
+	Name           string         `json:"name,omitempty"`
+	AdditionalInfo AdditionalInfo `json:"additionalInfo,omitempty"`
 }
 
 type OutgoingMessage struct {
@@ -248,9 +251,19 @@ func (c *Client) closeSend() {
 
 func (c *Client) disconnect() {
 	c.disconnected.Do(func() {
+		// Determine display name for system message
+		displayName := c.user.Name
+		if displayName == "" && c.user.FirstName != "" && c.user.LastName != "" {
+			displayName = fmt.Sprintf("%s %s", c.user.FirstName, c.user.LastName)
+		} else if displayName == "" && c.user.FirstName != "" {
+			displayName = c.user.FirstName
+		} else if displayName == "" {
+			displayName = "Anonymous"
+		}
+
 		leaveMsg := OutgoingMessage{
 			MessageType: SystemMessage,
-			Message:     fmt.Sprintf("%s left room %d", c.user.Name, c.room.id),
+			Message:     fmt.Sprintf("%s left room %d", displayName, c.room.id),
 			Timestamp:   time.Now(),
 			User:        systemUser,
 		}
@@ -265,7 +278,7 @@ func (c *Client) disconnect() {
 	})
 }
 
-// GET /join/{roomID}?user=""
+// GET /join/{roomID}?user=""&userId=""
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
@@ -275,15 +288,39 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userName := r.URL.Query().Get("user")
+	var user User
 
-	if userName == "" {
-		userName = defaultUserName[rand.Intn(len(defaultUserName))]
-	}
+	// Check if userId parameter is provided
+	userIDStr := r.URL.Query().Get("userId")
+	if userIDStr != "" {
+		userID, err := uuid.Parse(userIDStr)
+		if err != nil {
+			logger.Warn("invalid user id for websocket join", "userID", userIDStr, "remoteAddr", r.RemoteAddr, "error", err)
+			http.Error(w, "invalid user id", http.StatusBadRequest)
+			return
+		}
 
-	user := User{
-		ID:   uuid.New(),
-		Name: userName,
+		// Try to get user from registry
+		registeredUser, ok := userRegistry.GetUser(userID)
+		if !ok {
+			logger.Warn("user not found in registry", "userID", userID, "remoteAddr", r.RemoteAddr)
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+		user = *registeredUser
+		logger.Info("user from registry joining room", "userID", user.ID, "roomID", roomID)
+	} else {
+		// Fallback: create ephemeral user from query parameter
+		userName := r.URL.Query().Get("user")
+		if userName == "" {
+			userName = defaultUserName[rand.Intn(len(defaultUserName))]
+		}
+
+		user = User{
+			ID:   uuid.New(),
+			Name: userName,
+		}
+		logger.Info("ephemeral user joining room", "userID", user.ID, "userName", user.Name, "roomID", roomID)
 	}
 
 	room, ok := hub.GetRoom(uint(roomID))
@@ -306,9 +343,19 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		send: make(chan []byte, 256),
 	}
 
+	// Determine display name for system message
+	displayName := user.Name
+	if displayName == "" && user.FirstName != "" && user.LastName != "" {
+		displayName = fmt.Sprintf("%s %s", user.FirstName, user.LastName)
+	} else if displayName == "" && user.FirstName != "" {
+		displayName = user.FirstName
+	} else if displayName == "" {
+		displayName = "Anonymous"
+	}
+
 	hello := OutgoingMessage{
 		MessageType: SystemMessage,
-		Message:     fmt.Sprintf("%s joined room %d", user.Name, roomID),
+		Message:     fmt.Sprintf("%s joined room %d", displayName, roomID),
 		Timestamp:   time.Now(),
 		User:        systemUser,
 	}
@@ -400,12 +447,27 @@ func (c *Client) writePump() {
 
 func main() {
 	r := mux.NewRouter()
+
+	// Room routes
 	r.HandleFunc("/rooms", createRoomHandler).Methods("POST")
 	r.HandleFunc("/rooms", getAllRoomsHandler).Methods("GET")
+	r.HandleFunc("/rooms/users", getAllUsersInRoomsHandler).Methods("GET")
 	r.HandleFunc("/rooms/{roomID}", getRoomIDHandler).Methods("GET")
 	r.HandleFunc("/rooms/{roomID}", patchRoomHandler).Methods("PATCH")
 	r.HandleFunc("/rooms/{roomID}", putRoomHandler).Methods("PUT")
+	r.HandleFunc("/rooms/{roomID}/users", getRoomUsersHandler).Methods("GET")
+
+	// User routes
+	r.HandleFunc("/users", getAllUsersHandler).Methods("GET")
+	r.HandleFunc("/users", createUserHandler).Methods("POST")
+	r.HandleFunc("/users/{userID}", putUserHandler).Methods("PUT")
+	r.HandleFunc("/users/{userID}", patchUserHandler).Methods("PATCH")
+	r.HandleFunc("/users/{userID}", deleteUserHandler).Methods("DELETE")
+
+	// WebSocket route
 	r.HandleFunc("/join/{roomID}", wsHandler).Methods("GET")
+
+	// Info routes
 	r.HandleFunc("/info", getInfoHandler).Methods("GET")
 
 	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
