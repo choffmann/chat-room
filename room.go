@@ -5,6 +5,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -30,6 +32,8 @@ type Room struct {
 	activityMu     sync.RWMutex
 	lastActivity   time.Time
 	additionalInfo AdditionalInfo
+	messagesMu     sync.RWMutex
+	messages       []OutgoingMessage
 }
 
 func newRoomID() uint {
@@ -51,6 +55,7 @@ func (h *Hub) CreateRoom(additionalInfo AdditionalInfo) *Room {
 		shutdown:       make(chan struct{}),
 		lastActivity:   time.Now(),
 		additionalInfo: additionalInfo,
+		messages:       make([]OutgoingMessage, 0),
 	}
 
 	logger.Info("creating new room", "roomID", id)
@@ -285,4 +290,75 @@ func (r *Room) deleteRoomWithNoActivity(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (r *Room) StoreMessage(msg OutgoingMessage) {
+	r.messagesMu.Lock()
+	defer r.messagesMu.Unlock()
+	if msg.AdditionalInfo == nil {
+		msg.AdditionalInfo = make(AdditionalInfo)
+	}
+	r.messages = append(r.messages, msg)
+}
+
+func (r *Room) GetMessages() []OutgoingMessage {
+	r.messagesMu.RLock()
+	defer r.messagesMu.RUnlock()
+	messages := make([]OutgoingMessage, len(r.messages))
+	copy(messages, r.messages)
+	return messages
+}
+
+func (r *Room) GetMessage(messageID uuid.UUID) (*OutgoingMessage, bool) {
+	r.messagesMu.RLock()
+	defer r.messagesMu.RUnlock()
+	for _, msg := range r.messages {
+		if msg.ID == messageID {
+			return &msg, true
+		}
+	}
+	return nil, false
+}
+
+func (r *Room) UpdateMessage(messageID uuid.UUID, newContent string, newAdditionalInfo AdditionalInfo) bool {
+	r.messagesMu.Lock()
+	defer r.messagesMu.Unlock()
+	for i := range r.messages {
+		if r.messages[i].ID == messageID {
+			if r.messages[i].MessageType == SystemMessage {
+				return false
+			}
+
+			r.messages[i].Message = newContent
+			if newAdditionalInfo != nil {
+				r.messages[i].AdditionalInfo = newAdditionalInfo
+			}
+
+			r.messages[i].AdditionalInfo["modified"] = true
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Room) PatchMessage(messageID uuid.UUID, newContent *string, newAdditionalInfo AdditionalInfo) bool {
+	r.messagesMu.Lock()
+	defer r.messagesMu.Unlock()
+	for i := range r.messages {
+		if r.messages[i].ID == messageID {
+			if r.messages[i].MessageType == SystemMessage {
+				return false
+			}
+			if newContent != nil {
+				r.messages[i].Message = *newContent
+			}
+			if newAdditionalInfo != nil {
+				r.messages[i].AdditionalInfo = newAdditionalInfo
+			}
+
+			r.messages[i].AdditionalInfo["modified"] = true
+			return true
+		}
+	}
+	return false
 }

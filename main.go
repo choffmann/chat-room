@@ -58,6 +58,7 @@ func getDisplayName(user User) string {
 }
 
 type OutgoingMessage struct {
+	ID             uuid.UUID      `json:"id"`
 	MessageType    MessageType    `json:"type"`
 	Message        string         `json:"message"`
 	Timestamp      time.Time      `json:"timestamp"`
@@ -88,6 +89,7 @@ var (
 	}
 	roomCounter = 0
 	roomMu      sync.Mutex
+	messageMu   sync.Mutex
 	systemUser  = User{
 		ID:   uuid.New(),
 		Name: "system",
@@ -264,13 +266,18 @@ func (c *Client) closeSend() {
 func (c *Client) disconnect() {
 	c.disconnected.Do(func() {
 		displayName := getDisplayName(c.user)
+		timestamp := time.Now()
 
 		leaveMsg := OutgoingMessage{
+			ID:          uuid.New(),
 			MessageType: SystemMessage,
 			Message:     fmt.Sprintf("%s left room %d", displayName, c.room.id),
-			Timestamp:   time.Now(),
+			Timestamp:   timestamp,
 			User:        systemUser,
 		}
+
+		c.room.StoreMessage(leaveMsg)
+
 		b, _ := json.Marshal(leaveMsg)
 		if !c.room.tryBroadcast(b) {
 			logger.Debug("failed to broadcast leave message, room may be closing", "roomID", c.room.id)
@@ -280,6 +287,224 @@ func (c *Client) disconnect() {
 			logger.Debug("failed to unregister client, room may be closing", "roomID", c.room.id, "userID", c.user.ID)
 		}
 	})
+}
+
+// GET /rooms/{roomID}/messages
+func getRoomMessagesHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
+	if err != nil {
+		logger.Warn("invalid room id for getting messages", "roomID", vars["roomID"], "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "can't parse room id to uint", http.StatusBadRequest)
+		return
+	}
+
+	room, ok := hub.GetRoom(uint(roomID))
+	if !ok {
+		logger.Warn("room not found for getting messages", "roomID", roomID, "remoteAddr", r.RemoteAddr)
+		http.Error(w, "room not found", http.StatusNotFound)
+		return
+	}
+
+	messages := room.GetMessages()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string][]OutgoingMessage{"messages": messages})
+}
+
+// GET /rooms/{roomID}/messages/{messageID}
+func getRoomMessageHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
+	if err != nil {
+		logger.Warn("invalid room id for getting message", "roomID", vars["roomID"], "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "can't parse room id to uint", http.StatusBadRequest)
+		return
+	}
+
+	messageID, err := uuid.Parse(vars["messageID"])
+	if err != nil {
+		logger.Warn("invalid message id for getting", "messageID", vars["messageID"], "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "can't parse message id to uuid", http.StatusBadRequest)
+		return
+	}
+
+	room, ok := hub.GetRoom(uint(roomID))
+	if !ok {
+		logger.Warn("room not found for getting message", "roomID", roomID, "remoteAddr", r.RemoteAddr)
+		http.Error(w, "room not found", http.StatusNotFound)
+		return
+	}
+
+	message, success := room.GetMessage(messageID)
+	if !success {
+		logger.Warn("message not found for getting", "roomID", roomID, "messageID", messageID, "remoteAddr", r.RemoteAddr)
+		http.Error(w, "message not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(message)
+}
+
+// PATCH /rooms/{roomID}/messages/{messageID}
+func patchRoomMessageHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
+	if err != nil {
+		logger.Warn("invalid room id for patching message", "roomID", vars["roomID"], "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "can't parse room id to uint", http.StatusBadRequest)
+		return
+	}
+
+	messageID, err := uuid.Parse(vars["messageID"])
+	if err != nil {
+		logger.Warn("invalid message id for patching", "messageID", vars["messageID"], "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "can't parse message id to uuid", http.StatusBadRequest)
+		return
+	}
+
+	room, ok := hub.GetRoom(uint(roomID))
+	if !ok {
+		logger.Warn("room not found for patching message", "roomID", roomID, "remoteAddr", r.RemoteAddr)
+		http.Error(w, "room not found", http.StatusNotFound)
+		return
+	}
+
+	var patchRequest struct {
+		Message        *string        `json:"message,omitempty"`
+		AdditionalInfo AdditionalInfo `json:"additionalInfo,omitempty"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	err = decoder.Decode(&patchRequest)
+	if err != nil {
+		logger.Warn("failed to decode message patch request", "roomID", roomID, "messageID", messageID, "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// At least one field must be provided
+	if patchRequest.Message == nil && patchRequest.AdditionalInfo == nil {
+		logger.Warn("no fields to patch in message update request", "roomID", roomID, "messageID", messageID, "remoteAddr", r.RemoteAddr)
+		http.Error(w, "at least one field (message or additionalInfo) must be provided", http.StatusBadRequest)
+		return
+	}
+
+	// If message is provided, it should not be empty
+	if patchRequest.Message != nil && *patchRequest.Message == "" {
+		logger.Warn("empty message content in patch request", "roomID", roomID, "messageID", messageID, "remoteAddr", r.RemoteAddr)
+		http.Error(w, "message content cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	success := room.PatchMessage(messageID, patchRequest.Message, patchRequest.AdditionalInfo)
+	if !success {
+		logger.Warn("message not found for patch", "roomID", roomID, "messageID", messageID, "remoteAddr", r.RemoteAddr)
+		http.Error(w, "message not found", http.StatusNotFound)
+		return
+	}
+
+	logger.Info("message patched", "roomID", roomID, "messageID", messageID)
+
+	updatedMessage, _ := room.GetMessage(messageID)
+	b, _ := json.Marshal(updatedMessage)
+	room.tryBroadcast(b)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(updatedMessage)
+}
+
+// PUT /rooms/{roomID}/messages/{messageID}
+func putRoomMessageHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
+	if err != nil {
+		logger.Warn("invalid room id for updating message", "roomID", vars["roomID"], "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "can't parse room id to uint", http.StatusBadRequest)
+		return
+	}
+
+	messageID, err := uuid.Parse(vars["messageID"])
+	if err != nil {
+		logger.Warn("invalid message id for updating", "messageID", vars["messageID"], "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "can't parse message id to uuid", http.StatusBadRequest)
+		return
+	}
+
+	room, ok := hub.GetRoom(uint(roomID))
+	if !ok {
+		logger.Warn("room not found for updating message", "roomID", roomID, "remoteAddr", r.RemoteAddr)
+		http.Error(w, "room not found", http.StatusNotFound)
+		return
+	}
+
+	var patchRequest struct {
+		Message        string         `json:"message"`
+		AdditionalInfo AdditionalInfo `json:"additionalInfo,omitempty"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	err = decoder.Decode(&patchRequest)
+	if err != nil {
+		logger.Warn("failed to decode message put request", "roomID", roomID, "messageID", messageID, "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	success := room.UpdateMessage(messageID, patchRequest.Message, patchRequest.AdditionalInfo)
+	if !success {
+		logger.Warn("message not found for updating", "roomID", roomID, "messageID", messageID, "remoteAddr", r.RemoteAddr)
+		http.Error(w, "message not found", http.StatusNotFound)
+		return
+	}
+
+	logger.Info("message updated", "roomID", roomID, "messageID", messageID)
+
+	updatedMessage, _ := room.GetMessage(messageID)
+	b, _ := json.Marshal(updatedMessage)
+	room.tryBroadcast(b)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(updatedMessage)
+}
+
+// DELETE /rooms/{roomID}/messages/{messageID}
+func deleteRoomMessageHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
+	if err != nil {
+		logger.Warn("invalid room id for deleting message", "roomID", vars["roomID"], "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "can't parse room id to uint", http.StatusBadRequest)
+		return
+	}
+
+	messageID, err := uuid.Parse(vars["messageID"])
+	if err != nil {
+		logger.Warn("invalid message id for deleting", "messageID", vars["messageID"], "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "can't parse message id to uuid", http.StatusBadRequest)
+		return
+	}
+
+	room, ok := hub.GetRoom(uint(roomID))
+	if !ok {
+		logger.Warn("room not found for deleting message", "roomID", roomID, "remoteAddr", r.RemoteAddr)
+		http.Error(w, "room not found", http.StatusNotFound)
+		return
+	}
+
+	success := room.UpdateMessage(messageID, "deleted", AdditionalInfo{"deleted": true})
+	if !success {
+		logger.Warn("message not found for deleting", "roomID", roomID, "messageID", messageID, "remoteAddr", r.RemoteAddr)
+		http.Error(w, "message not found", http.StatusNotFound)
+		return
+	}
+
+	logger.Info("message deleted", "roomID", roomID, "messageID", messageID)
+
+	deletedMessage, _ := room.GetMessage(messageID)
+	b, _ := json.Marshal(deletedMessage)
+	room.tryBroadcast(b)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(deletedMessage)
 }
 
 // GET /join/{roomID}?user=""&userId=""
@@ -348,13 +573,17 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	displayName := getDisplayName(user)
+	timestamp := time.Now()
 
 	hello := OutgoingMessage{
+		ID:          uuid.New(),
 		MessageType: SystemMessage,
 		Message:     fmt.Sprintf("%s joined room %d", displayName, roomID),
-		Timestamp:   time.Now(),
+		Timestamp:   timestamp,
 		User:        systemUser,
 	}
+
+	room.StoreMessage(hello)
 
 	b, _ := json.Marshal(hello)
 	if !room.tryBroadcast(b) {
@@ -372,13 +601,23 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	client.readPump()
 }
 
+func shouldStoreMessage(msgType MessageType) bool {
+	return msgType == SystemMessage || msgType == UserMessage
+}
+
+const (
+	B   = 1
+	KiB = 1024 * B
+	MiB = 1024 * KiB
+)
+
 func (c *Client) readPump() {
 	defer func() {
 		c.disconnect()
 		c.conn.Close()
 	}()
 
-	c.conn.SetReadLimit(8192)
+	c.conn.SetReadLimit(10 * MiB)
 	_ = c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	c.conn.SetPongHandler(func(string) error {
 		_ = c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -394,19 +633,28 @@ func (c *Client) readPump() {
 			break
 		}
 
+		timestamp := time.Now()
+
 		payload := OutgoingMessage{
+			ID:             uuid.New(),
 			MessageType:    message.MessageType,
 			Message:        message.Message,
-			Timestamp:      time.Now(),
+			Timestamp:      timestamp,
 			User:           c.user,
 			AdditionalInfo: message.AdditionalInfo,
 		}
+
 		b, _ := json.Marshal(payload)
 		if !c.room.tryBroadcast(b) {
 			logger.Warn("failed to broadcast message, room may be closing", "roomID", c.room.id, "userID", c.user.ID)
 			break
 		}
-		logger.Info("new message received", "roomID", c.room.id, "userID", c.user.ID, "message", payload.Message)
+
+		if shouldStoreMessage(message.MessageType) && len(b) < 2*MiB {
+			c.room.StoreMessage(payload)
+		}
+
+		logger.Info("new message received", "roomID", c.room.id, "userID", c.user.ID, "messageID", payload.ID, "messageType", payload.MessageType)
 	}
 }
 
@@ -452,6 +700,11 @@ func main() {
 	r.HandleFunc("/rooms/{roomID}", patchRoomHandler).Methods("PATCH")
 	r.HandleFunc("/rooms/{roomID}", putRoomHandler).Methods("PUT")
 	r.HandleFunc("/rooms/{roomID}/users", getRoomUsersHandler).Methods("GET")
+	r.HandleFunc("/rooms/{roomID}/messages", getRoomMessagesHandler).Methods("GET")
+	r.HandleFunc("/rooms/{roomID}/messages/{messageID}", getRoomMessageHandler).Methods("GET")
+	r.HandleFunc("/rooms/{roomID}/messages/{messageID}", patchRoomMessageHandler).Methods("PATCH")
+	r.HandleFunc("/rooms/{roomID}/messages/{messageID}", putRoomMessageHandler).Methods("PUT")
+	r.HandleFunc("/rooms/{roomID}/messages/{messageID}", deleteRoomMessageHandler).Methods("DELETE")
 
 	// User routes
 	r.HandleFunc("/users", getAllUsersHandler).Methods("GET")

@@ -1,6 +1,6 @@
 # Chat Room - Real-time Chat Backend
 
-A lightweight real-time chat backend written in Go. The server manages ephemeral chat rooms where clients connect via WebSocket to exchange messages. Rooms are created on-demand and automatically deleted after 3 hours of inactivity or when all participants disconnect.
+A lightweight real-time chat backend written in Go. The server manages ephemeral chat rooms where clients connect via WebSocket to exchange messages. Rooms are created on-demand and automatically deleted after 3 hours of inactivity.
 
 ## REST Endpoints
 
@@ -21,6 +21,7 @@ Content-Type: application/json
 ```
 
 - Body: arbitrary JSON object (may be empty). Values are stored as-is under `additionalInfo`.
+- If the JSON payload cannot be decoded, an empty `additionalInfo` is used instead.
 
 #### Successful Response — `200 OK`
 
@@ -29,10 +30,6 @@ Content-Type: application/json
   "roomID": 1
 }
 ```
-
-#### Error Responses
-
-- `400 Bad Request` if the JSON payload cannot be decoded.
 
 ### List Rooms — `GET /rooms`
 
@@ -57,7 +54,7 @@ Retrieves all currently active rooms.
 
 ### Get Room Details — `GET /rooms/{roomID}`
 
-Returns metadata for a specific room including currently connected users.
+Returns metadata for a specific room.
 
 - `roomID`: numeric path parameter.
 
@@ -69,17 +66,7 @@ Returns metadata for a specific room including currently connected users.
   "additionalInfo": {
     "title": "Mobile Computing Lecture",
     "topic": "Android Architecture Components"
-  },
-  "user": [
-    {
-      "id": "9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c",
-      "name": "Alice"
-    },
-    {
-      "id": "dd0a6c0c-7b01-47d4-8b3a-296774a0930c",
-      "name": "Bob"
-    }
-  ]
+  }
 }
 ```
 
@@ -158,6 +145,243 @@ Content-Type: application/json
 
 - `400 Bad Request` if `roomID` is invalid or JSON payload is malformed.
 - `404 Not Found` if the room does not exist.
+
+### Get Room Messages — `GET /rooms/{roomID}/messages`
+
+Returns all messages that have been sent in a specific room. Messages are stored in memory and include system messages (joins/leaves) as well as user messages.
+
+**Note:** Only messages smaller than 2 MiB (after JSON serialization) are stored. Larger messages are broadcast in real-time but not persisted.
+
+- `roomID`: numeric path parameter.
+
+#### Successful Response — `200 OK`
+
+```json
+{
+  "messages": [
+    {
+      "id": 1,
+      "type": "system",
+      "message": "Alice joined room 1",
+      "timestamp": "2024-04-09T12:34:56.789012345Z",
+      "user": {
+        "id": "dd0a6c0c-7b01-47d4-8b3a-296774a0930c",
+        "name": "system"
+      }
+    },
+    {
+      "id": 2,
+      "type": "message",
+      "message": "Hello everyone!",
+      "timestamp": "2024-04-09T12:35:10.123456789Z",
+      "user": {
+        "id": "9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c",
+        "name": "Alice"
+      },
+      "additionalInfo": {
+        "replyTo": "msg-456"
+      }
+    }
+  ]
+}
+```
+
+#### Error Responses
+
+- `400 Bad Request` if `roomID` is not a positive integer.
+- `404 Not Found` if the room does not exist.
+
+### Get Single Message — `GET /rooms/{roomID}/messages/{messageID}`
+
+Retrieves a specific message from a room by its ID.
+
+- `roomID`: numeric path parameter (room identifier).
+- `messageID`: UUID path parameter (message identifier).
+
+#### Successful Response — `200 OK`
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "type": "message",
+  "message": "Hello everyone!",
+  "timestamp": "2024-04-09T12:35:10.123456789Z",
+  "user": {
+    "id": "9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c",
+    "name": "Alice"
+  },
+  "additionalInfo": {
+    "replyTo": "msg-456"
+  }
+}
+```
+
+#### Error Responses
+
+- `400 Bad Request` if `roomID` or `messageID` is invalid.
+- `404 Not Found` if the room or message does not exist.
+
+### Update Message (Partial) — `PATCH /rooms/{roomID}/messages/{messageID}`
+
+Partially updates a specific message in a room. You can update the message text, additionalInfo, or both. Only provided fields are updated; others remain unchanged.
+
+**Note:** The server automatically sets `modified: true` in the message's `additionalInfo`.
+
+- `roomID`: numeric path parameter (room identifier).
+- `messageID`: UUID path parameter (message identifier).
+
+#### Request Examples
+
+**Update only the message text:**
+
+```http
+PATCH /rooms/1/messages/550e8400-e29b-41d4-a716-446655440000 HTTP/1.1
+Content-Type: application/json
+
+{
+  "message": "Hello everyone! (edited)"
+}
+```
+
+**Update only additionalInfo:**
+
+```http
+PATCH /rooms/1/messages/550e8400-e29b-41d4-a716-446655440000 HTTP/1.1
+Content-Type: application/json
+
+{
+  "additionalInfo": {
+    "edited": true,
+    "editTimestamp": "2024-04-09T12:36:00.000000000Z"
+  }
+}
+```
+
+**Update both message and additionalInfo:**
+
+```http
+PATCH /rooms/1/messages/550e8400-e29b-41d4-a716-446655440000 HTTP/1.1
+Content-Type: application/json
+
+{
+  "message": "Hello everyone! (edited)",
+  "additionalInfo": {
+    "editReason": "Fixed typo"
+  }
+}
+```
+
+#### Successful Response — `200 OK`
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "type": "message",
+  "message": "Hello everyone! (edited)",
+  "timestamp": "2024-04-09T12:35:10.123456789Z",
+  "user": {
+    "id": "9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c",
+    "name": "Alice"
+  },
+  "additionalInfo": {
+    "modified": true,
+    "editReason": "Fixed typo"
+  }
+}
+```
+
+#### Error Responses
+
+- `400 Bad Request` if:
+  - `roomID` or `messageID` is invalid
+  - No fields are provided in the request body
+  - `message` field is provided but empty
+  - JSON payload is malformed
+- `404 Not Found` if the room or message does not exist.
+
+### Replace Message — `PUT /rooms/{roomID}/messages/{messageID}`
+
+Completely replaces a message in a room. Unlike PATCH, this requires all fields and replaces the entire message content.
+
+**Note:** The server automatically sets `modified: true` in the message's `additionalInfo`.
+
+- `roomID`: numeric path parameter (room identifier).
+- `messageID`: UUID path parameter (message identifier).
+
+#### Request
+
+```http
+PUT /rooms/1/messages/550e8400-e29b-41d4-a716-446655440000 HTTP/1.1
+Content-Type: application/json
+
+{
+  "message": "Completely new message content",
+  "additionalInfo": {
+    "version": 2
+  }
+}
+```
+
+- `message`: Required. New message content.
+- `additionalInfo`: Optional. New metadata (replaces existing).
+
+#### Successful Response — `200 OK`
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "type": "message",
+  "message": "Completely new message content",
+  "timestamp": "2024-04-09T12:35:10.123456789Z",
+  "user": {
+    "id": "9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c",
+    "name": "Alice"
+  },
+  "additionalInfo": {
+    "modified": true,
+    "version": 2
+  }
+}
+```
+
+The updated message is automatically broadcast to all connected clients.
+
+#### Error Responses
+
+- `400 Bad Request` if `roomID` or `messageID` is invalid or JSON payload is malformed.
+- `404 Not Found` if the room or message does not exist.
+
+### Delete Message — `DELETE /rooms/{roomID}/messages/{messageID}`
+
+Marks a message as deleted. The message is not actually removed but its content is replaced with "deleted" and a deleted flag is added to additionalInfo.
+
+- `roomID`: numeric path parameter (room identifier).
+- `messageID`: UUID path parameter (message identifier).
+
+#### Successful Response — `200 OK`
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "type": "message",
+  "message": "deleted",
+  "timestamp": "2024-04-09T12:35:10.123456789Z",
+  "user": {
+    "id": "9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c",
+    "name": "Alice"
+  },
+  "additionalInfo": {
+    "deleted": true
+  }
+}
+```
+
+The deleted message is automatically broadcast to all connected clients.
+
+#### Error Responses
+
+- `400 Bad Request` if `roomID` or `messageID` is invalid.
+- `404 Not Found` if the room or message does not exist.
 
 ---
 
@@ -390,12 +614,43 @@ Returns all users currently connected to any room, along with their room IDs.
 
 ---
 
-### Join Room via WebSocket — `GET /join/{roomID}?user=<name>`
+### Join Room via WebSocket — `GET /join/{roomID}`
 
 Upgrades the HTTP connection to WebSocket and joins the requested room.
 
 - `roomID`: numeric path parameter.
-- `user`: optional query parameter. If omitted, the server assigns a random display name.
+
+#### Query Parameters
+
+**Option 1: Join as registered user**
+
+- `userId`: UUID of a user registered via `POST /users`. If provided, the server loads the full user profile from the registry.
+
+**Option 2: Join as ephemeral user (fallback)**
+
+- `user`: Display name for an ephemeral (temporary) user. If omitted, the server assigns a random display name.
+
+**Priority:** If `userId` is provided, it takes precedence over `user`. The `user` parameter is only used when `userId` is absent.
+
+#### Examples
+
+```
+GET /join/1?userId=9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c
+```
+
+Joins room 1 using registered user profile.
+
+```
+GET /join/1?user=Alice
+```
+
+Joins room 1 as ephemeral user "Alice".
+
+```
+GET /join/1
+```
+
+Joins room 1 with random display name (e.g., "Toni Tester", "Harald Hüftschmerz").
 
 #### WebSocket Message Flow
 
@@ -474,13 +729,24 @@ When a client disconnects, the server broadcasts:
 
 - Server sends ping frames every 30 seconds
 - Client must respond with pong within 60 seconds
-- Maximum message size: 8KB
+- Maximum message size: 10 MiB
 - Write timeout: 10 seconds
+
+**Message Persistence**
+
+- Messages are broadcast to all connected clients in real-time regardless of size
+- Only `system` and `message` type messages are stored in message history
+- Messages larger than 2 MiB (after JSON serialization) are NOT stored, but still broadcast
+- Other message types (`image`, custom events) are ephemeral and never stored
 
 #### Error Responses
 
-- `400 Bad Request` if `roomID` cannot be parsed.
-- `404 Not Found` if the room does not exist.
+- `400 Bad Request` if:
+  - `roomID` cannot be parsed
+  - `userId` is provided but not a valid UUID
+- `404 Not Found` if:
+  - The room does not exist
+  - `userId` is provided but user not found in registry
 - Standard WebSocket close frames for protocol errors or disconnects.
 
 ### Build Information — `GET /info`
@@ -513,22 +779,48 @@ Plain-text body: `OK`
 
 ### Outgoing Messages (Client → Server)
 
-| Field            | Type   | Required | Description                                    |
-| ---------------- | ------ | -------- | ---------------------------------------------- |
-| `type`           | string | Yes      | Message type: `"message"` or `"image"`         |
-| `message`        | string | Yes      | Message content or image URL                   |
-| `additionalInfo` | object | No       | Arbitrary metadata (client-defined structure)  |
+| Field            | Type   | Required | Description                                                      |
+| ---------------- | ------ | -------- | ---------------------------------------------------------------- |
+| `type`           | string | Yes      | Message type: `"message"`, `"image"`                             |
+| `message`        | string | Yes      | Message content or image as base64                               |
+| `additionalInfo` | object | No       | Arbitrary metadata (client-defined structure)                    |
 
 ### Incoming Messages (Server → Client)
 
-| Field            | Type    | Description                                            |
-| ---------------- | ------- | ------------------------------------------------------ |
-| `type`           | string  | `"system"`, `"message"`, or `"image"`                  |
-| `message`        | string  | Message body or system notification text               |
-| `timestamp`      | RFC3339 | Server-generated timestamp                             |
-| `user.id`        | UUID    | Unique user identifier for this connection             |
-| `user.name`      | string  | Display name (or random default if not provided)       |
-| `additionalInfo` | object  | Optional metadata passed through from client messages  |
+| Field            | Type    | Description                                                      |
+| ---------------- | ------- | ---------------------------------------------------------------- |
+| `id`             | UUID    | Unique message identifier                                        |
+| `type`           | string  | Message or event type (see below)                                |
+| `message`        | string  | Message body or system notification text                         |
+| `timestamp`      | RFC3339 | Server-generated timestamp                                       |
+| `user.id`        | UUID    | Unique user identifier for this connection                       |
+| `user.name`      | string  | Display name (or random default if not provided)                 |
+| `additionalInfo` | object  | Optional metadata passed through from client messages            |
+
+### Message Types
+
+The server defines three message types:
+
+**Persistent Types** (stored in message history if < 2 MiB):
+
+- `"system"` - System notifications (user joined/left)
+- `"message"` - Regular text messages
+
+**Ephemeral Types** (broadcast only, not stored):
+
+- `"image"` - Image messages (Base64-encoded)
+
+## Message Behavior
+
+### Storage Rules
+
+- **System messages** (`"system"`): Stored if < 2 MiB
+- **User messages** (`"message"`): Stored if < 2 MiB
+- **Image messages** (`"image"`): Never stored, only broadcast in real-time
+
+### Broadcasting
+
+All message types are broadcast to all connected clients in real-time, regardless of whether they are stored or not (up to 10 MiB size limit).
 
 ## Room Lifecycle
 
@@ -544,14 +836,12 @@ Room activity is updated on:
 
 - Client joins the room
 - Message is broadcast
-- Room metadata is updated via `PATCH` or `PUT`
 
 ### Auto-Deletion
 
 Rooms are automatically deleted when:
 
-- **All clients disconnect** (immediate deletion)
-- **3 hours of inactivity** (no joins, messages, or updates)
+- **3 hours of inactivity** (no joins or messages)
 
 ### Shutdown Behavior
 
