@@ -45,6 +45,18 @@ type User struct {
 	AdditionalInfo AdditionalInfo `json:"additionalInfo,omitempty"`
 }
 
+func getDisplayName(user User) string {
+	displayName := user.Name
+	if displayName == "" && user.FirstName != "" && user.LastName != "" {
+		return fmt.Sprintf("%s %s", user.FirstName, user.LastName)
+	} else if displayName == "" && user.FirstName != "" {
+		return user.FirstName
+	} else if displayName == "" {
+		return "Anonymous"
+	}
+	return displayName
+}
+
 type OutgoingMessage struct {
 	MessageType    MessageType    `json:"type"`
 	Message        string         `json:"message"`
@@ -251,15 +263,7 @@ func (c *Client) closeSend() {
 
 func (c *Client) disconnect() {
 	c.disconnected.Do(func() {
-		// Determine display name for system message
-		displayName := c.user.Name
-		if displayName == "" && c.user.FirstName != "" && c.user.LastName != "" {
-			displayName = fmt.Sprintf("%s %s", c.user.FirstName, c.user.LastName)
-		} else if displayName == "" && c.user.FirstName != "" {
-			displayName = c.user.FirstName
-		} else if displayName == "" {
-			displayName = "Anonymous"
-		}
+		displayName := getDisplayName(c.user)
 
 		leaveMsg := OutgoingMessage{
 			MessageType: SystemMessage,
@@ -343,15 +347,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		send: make(chan []byte, 256),
 	}
 
-	// Determine display name for system message
-	displayName := user.Name
-	if displayName == "" && user.FirstName != "" && user.LastName != "" {
-		displayName = fmt.Sprintf("%s %s", user.FirstName, user.LastName)
-	} else if displayName == "" && user.FirstName != "" {
-		displayName = user.FirstName
-	} else if displayName == "" {
-		displayName = "Anonymous"
-	}
+	displayName := getDisplayName(user)
 
 	hello := OutgoingMessage{
 		MessageType: SystemMessage,
@@ -469,11 +465,7 @@ func main() {
 
 	// Info routes
 	r.HandleFunc("/info", getInfoHandler).Methods("GET")
-
-	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
-	})
+	r.HandleFunc("/healthz", healthzHandler).Methods("GET")
 
 	srv := &http.Server{
 		Addr:         ":8080",

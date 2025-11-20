@@ -14,6 +14,12 @@ type Info struct {
 	BuildTime     time.Time `json:"build_time"`
 }
 
+// GET /healthz
+func healthzHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("OK"))
+}
+
 // GET /info
 func getInfoHandler(w http.ResponseWriter, r *http.Request) {
 	var bt time.Time
