@@ -650,7 +650,7 @@ func (c *Client) readPump() {
 			break
 		}
 
-		if shouldStoreMessage(message.MessageType) && len(b) < 2*MiB {
+		if shouldStoreMessage(message.MessageType) && len(b) < 2*MiB && len(b) > 0 {
 			c.room.StoreMessage(payload)
 		}
 

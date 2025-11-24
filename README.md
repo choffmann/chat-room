@@ -150,7 +150,7 @@ Content-Type: application/json
 
 Returns all messages that have been sent in a specific room. Messages are stored in memory and include system messages (joins/leaves) as well as user messages.
 
-**Note:** Only messages smaller than 2 MiB (after JSON serialization) are stored. Larger messages are broadcast in real-time but not persisted.
+**Note:** Only messages smaller than 2 MiB (after JSON serialization) are stored. Larger messages are broadcast in real-time but not persisted. If a Message is empty, it will also not be stored
 
 - `roomID`: numeric path parameter.
 
