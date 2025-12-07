@@ -630,45 +630,86 @@ Upgrades the HTTP connection to WebSocket and joins the requested room.
 
 - `user`: Display name for an ephemeral (temporary) user. If omitted, the server assigns a random display name.
 
+**Optional: Enable user info extraction (for newer clients)**
+
+- `userInfo`: When set to `true`, the server sends the join message directly to the connecting client with a `self` flag in `additionalInfo`. This allows newer clients to extract their user information (ID and name) and filter out their own join notification. Older clients should omit this parameter.
+
 **Priority:** If `userId` is provided, it takes precedence over `user`. The `user` parameter is only used when `userId` is absent.
 
 #### Examples
 
 ```
-GET /join/1?userId=9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c
+GET /join/1?userId=9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c&userInfo=true
 ```
 
-Joins room 1 using registered user profile.
+Joins room 1 using registered user profile with user info extraction enabled.
 
 ```
-GET /join/1?user=Alice
+GET /join/1?user=Alice&userInfo=true
 ```
 
-Joins room 1 as ephemeral user "Alice".
+Joins room 1 as ephemeral user "Alice" with user info extraction enabled.
+
+```
+GET /join/1?userInfo=true
+```
+
+Joins room 1 with random display name (e.g., "Toni Tester", "Harald Hüftschmerz") and user info extraction enabled.
 
 ```
 GET /join/1
 ```
 
-Joins room 1 with random display name (e.g., "Toni Tester", "Harald Hüftschmerz").
+Joins room 1 without user info extraction (legacy behavior for older clients).
 
 #### WebSocket Message Flow
 
 **1. System Join Notification**
 
-Upon joining, the server broadcasts a system message to all connected clients:
+When a client joins with `userInfo=true`, the server sends two versions of the join message:
+
+**a) To the joining client directly (with `self` flag, only when `userInfo=true`):**
 
 ```json
 {
   "type": "system",
-  "message": "Alice joined room 1",
+  "message": "Kotlin Kevin joined room 1",
   "timestamp": "2024-04-09T12:34:56.789012345Z",
   "user": {
     "id": "dd0a6c0c-7b01-47d4-8b3a-296774a0930c",
     "name": "system"
+  },
+  "additionalInfo": {
+    "joinedUserId": "9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c",
+    "joinedUserName": "Kotlin Kevin",
+    "self": true
   }
 }
 ```
+
+The `self` flag allows clients to extract their user information (especially useful for anonymous joins with random names) and filter this message from the chat display.
+
+**b) Broadcast to all clients (always sent, without `self` flag):**
+
+```json
+{
+  "type": "system",
+  "message": "Kotlin Kevin joined room 1",
+  "timestamp": "2024-04-09T12:34:56.789012345Z",
+  "user": {
+    "id": "dd0a6c0c-7b01-47d4-8b3a-296774a0930c",
+    "name": "system"
+  },
+  "additionalInfo": {
+    "joinedUserId": "9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c",
+    "joinedUserName": "Kotlin Kevin"
+  }
+}
+```
+
+Older clients will simply ignore the `additionalInfo` and display the message normally.
+
+**Note:** When a client joins without the `userInfo=true` parameter, only the broadcast message (b) is sent. The client will not receive a separate message with their user information.
 
 **2. Sending Messages (Client → Server)**
 

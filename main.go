@@ -575,12 +575,40 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	displayName := getDisplayName(user)
 	timestamp := time.Now()
 
+	supportsUserInfo := r.URL.Query().Get("userInfo") == "true"
+
+	if supportsUserInfo {
+		selfJoin := OutgoingMessage{
+			ID:          uuid.New(),
+			MessageType: SystemMessage,
+			Message:     fmt.Sprintf("%s joined room %d", displayName, roomID),
+			Timestamp:   timestamp,
+			User:        systemUser,
+			AdditionalInfo: AdditionalInfo{
+				"joinedUserId":   user.ID.String(),
+				"joinedUserName": displayName,
+				"self":           true,
+			},
+		}
+		selfJoinBytes, _ := json.Marshal(selfJoin)
+
+		if err := conn.WriteMessage(websocket.TextMessage, selfJoinBytes); err != nil {
+			logger.Warn("failed to send join message to new client", "roomID", roomID, "userID", user.ID, "error", err)
+			conn.Close()
+			return
+		}
+	}
+
 	hello := OutgoingMessage{
 		ID:          uuid.New(),
 		MessageType: SystemMessage,
 		Message:     fmt.Sprintf("%s joined room %d", displayName, roomID),
 		Timestamp:   timestamp,
 		User:        systemUser,
+		AdditionalInfo: AdditionalInfo{
+			"joinedUserId":   user.ID.String(),
+			"joinedUserName": displayName,
+		},
 	}
 
 	room.StoreMessage(hello)
