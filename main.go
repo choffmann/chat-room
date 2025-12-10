@@ -737,6 +737,7 @@ func main() {
 	// User routes
 	r.HandleFunc("/users", getAllUsersHandler).Methods("GET")
 	r.HandleFunc("/users", createUserHandler).Methods("POST")
+	r.HandleFunc("/users/{userID}", getUserHandler).Methods("GET")
 	r.HandleFunc("/users/{userID}", putUserHandler).Methods("PUT")
 	r.HandleFunc("/users/{userID}", patchUserHandler).Methods("PATCH")
 	r.HandleFunc("/users/{userID}", deleteUserHandler).Methods("DELETE")

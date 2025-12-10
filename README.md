@@ -432,6 +432,32 @@ Content-Type: application/json
 
 - `400 Bad Request` if the JSON payload is malformed.
 
+### Get User by ID — `GET /users/{userID}`
+
+Returns a specific user from the user registry.
+
+- `userID`: UUID path parameter.
+
+#### Successful Response — `200 OK`
+
+```json
+{
+  "id": "9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c",
+  "firstName": "John",
+  "lastName": "Doe",
+  "name": "johndoe",
+  "additionalInfo": {
+    "avatar": "https://example.com/avatar.jpg",
+    "role": "student"
+  }
+}
+```
+
+#### Error Responses
+
+- `400 Bad Request` if `userID` is not a valid UUID.
+- `404 Not Found` if the user does not exist.
+
 ### Get All Users — `GET /users`
 
 Returns all users registered in the user registry.

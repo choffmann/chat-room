@@ -245,6 +245,69 @@ func TestPatchUser(t *testing.T) {
 	}
 }
 
+func TestGetUser(t *testing.T) {
+	setupUserTests()
+
+	// Create a user first
+	user := userRegistry.CreateUser("John", "Doe", "johndoe", AdditionalInfo{"email": "john@example.com"})
+
+	tests := []struct {
+		name           string
+		userID         string
+		expectedStatus int
+	}{
+		{
+			name:           "Get existing user",
+			userID:         user.ID.String(),
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Get non-existent user",
+			userID:         uuid.New().String(),
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:           "Invalid user ID",
+			userID:         "invalid-uuid",
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/users/"+tt.userID, nil)
+			req = mux.SetURLVars(req, map[string]string{"userID": tt.userID})
+			w := httptest.NewRecorder()
+
+			getUserHandler(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
+			}
+
+			if w.Code == http.StatusOK {
+				var fetchedUser User
+				if err := json.NewDecoder(w.Body).Decode(&fetchedUser); err != nil {
+					t.Fatalf("failed to decode response: %v", err)
+				}
+
+				if fetchedUser.ID != user.ID {
+					t.Errorf("expected user ID %s, got %s", user.ID, fetchedUser.ID)
+				}
+				if fetchedUser.FirstName != user.FirstName {
+					t.Errorf("expected firstName %s, got %s", user.FirstName, fetchedUser.FirstName)
+				}
+				if fetchedUser.LastName != user.LastName {
+					t.Errorf("expected lastName %s, got %s", user.LastName, fetchedUser.LastName)
+				}
+				if fetchedUser.Name != user.Name {
+					t.Errorf("expected name %s, got %s", user.Name, fetchedUser.Name)
+				}
+			}
+		})
+	}
+}
+
 func TestDeleteUser(t *testing.T) {
 	setupUserTests()
 

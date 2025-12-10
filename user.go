@@ -162,6 +162,27 @@ func createUserHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(user)
 }
 
+// GET /users/{userID}
+func getUserHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	userID, err := uuid.Parse(vars["userID"])
+	if err != nil {
+		logger.Warn("invalid user id for get", "userID", vars["userID"], "remoteAddr", r.RemoteAddr, "error", err)
+		http.Error(w, "invalid user id", http.StatusBadRequest)
+		return
+	}
+
+	user, ok := userRegistry.GetUser(userID)
+	if !ok {
+		logger.Warn("user id not found in user registry", "userID", vars["userID"], "remoteAddr", r.RemoteAddr)
+		http.Error(w, "user id not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(user)
+}
+
 // PUT /users/{userID}
 func putUserHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
