@@ -174,6 +174,7 @@ func getRoomIDHandler(w http.ResponseWriter, r *http.Request) {
 
 	payload := RoomResponse{
 		ID:             room.id,
+		UserCount:      room.GetClientCount(),
 		AdditionalInfo: room.additionalInfo,
 	}
 	w.Header().Set("Content-Type", "application/json")
