@@ -18,6 +18,9 @@ import (
 // @Router       /users [get]
 func (h *Handler) getAllUsersHandler(w http.ResponseWriter, r *http.Request) {
 	users := h.userRegistry.GetAllUsers()
+	if users == nil {
+		users = make([]*model.User, 0)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(users)
 }
