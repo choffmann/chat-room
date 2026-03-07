@@ -8,7 +8,7 @@
   };
 
   outputs = inputs: let
-    version = "0.0.0"; # x-release-please-version
+    version = "0.1.0"; # x-release-please-version
     goVersion = 24;
     lastModified = inputs.self.lastModifiedDate;
     buildTimestamp = "${builtins.substring 0 4 lastModified}-${builtins.substring 4 2 lastModified}-${builtins.substring 6 2 lastModified}T${builtins.substring 8 2 lastModified}:${builtins.substring 10 2 lastModified}:${builtins.substring 12 2 lastModified}Z";
