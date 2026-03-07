@@ -129,7 +129,6 @@ var (
 var (
 	version       string = "unknown"
 	gitCommit     string = "unknown"
-	gitBranch     string = "unknown"
 	gitRepository string = "unknown"
 	buildTime     string = "unknown"
 )

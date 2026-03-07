@@ -17,7 +17,6 @@ FROM preparer_go AS builder
 
 ARG APP_VERSION="v0.0.0"
 ARG APP_GIT_COMMIT="unknown"
-ARG APP_GIT_BRANCH="main"
 ARG APP_GIT_REPOSITORY="https://github.com/choffmann/chat-room"
 ARG APP_BUILD_TIME="unknown"
 
@@ -26,7 +25,6 @@ RUN go build -o "bin/chat-room" \
       -s -w \
       -X main.version=${APP_VERSION} \
       -X main.gitCommit=${APP_GIT_COMMIT} \
-      -X main.gitBranch=${APP_GIT_BRANCH} \
       -X main.gitRepository=${APP_GIT_REPOSITORY} \
       -X main.buildTime=${APP_BUILD_TIME} \
     "

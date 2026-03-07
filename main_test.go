@@ -27,7 +27,6 @@ func TestGetInfoHandler(t *testing.T) {
 	// Set some test values
 	version = "v1.0.0"
 	gitCommit = "abc123"
-	gitBranch = "main"
 	buildTime = "2025-01-01T00:00:00Z"
 	gitRepository = "https://github.com/choffmann/chat-room"
 
@@ -51,10 +50,6 @@ func TestGetInfoHandler(t *testing.T) {
 
 	if info.GitCommit != gitCommit {
 		t.Errorf("expected gitCommit %s, got %s", gitCommit, info.GitCommit)
-	}
-
-	if info.GitBranch != gitBranch {
-		t.Errorf("expected gitBranch %s, got %s", gitBranch, info.GitBranch)
 	}
 
 	// Check that BuildTime is set
