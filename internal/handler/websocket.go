@@ -15,7 +15,27 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// GET /join/{roomID}?user=""&userId=""
+// wsHandler godoc
+// @Summary      Join room via WebSocket
+// @Description  Upgrades the HTTP connection to WebSocket and joins the requested room.
+// @Description
+// @Description  **Authentication options:**
+// @Description  - `userId` (UUID): Join as a registered user from the registry. Takes precedence over `user`.
+// @Description  - `user` (string): Join as an ephemeral user with the given display name.
+// @Description  - Neither: Server assigns a random display name.
+// @Description
+// @Description  **User info extraction:** Set `userInfo=true` to receive a self-join message with a `self` flag, allowing clients to extract their user information.
+// @Description
+// @Description  **Connection management:** Server sends ping every 30s, expects pong within 60s. Max message size: 10 MiB.
+// @Tags         websocket
+// @Param        roomID    path   int     true   "Room ID"
+// @Param        userId    query  string  false  "Registered user UUID"
+// @Param        user      query  string  false  "Ephemeral display name"
+// @Param        userInfo  query  bool    false  "Enable self-join message with user info"
+// @Success      101       "Switching Protocols - WebSocket connection established"
+// @Failure      400       {string}  string  "invalid room or user ID"
+// @Failure      404       {string}  string  "room or user not found"
+// @Router       /join/{roomID} [get]
 func (h *Handler) wsHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)

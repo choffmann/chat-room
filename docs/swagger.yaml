@@ -1,0 +1,816 @@
+basePath: /api/v1
+definitions:
+  BuildInfo:
+    properties:
+      build_time:
+        example: "2024-04-09T12:45:00Z"
+        type: string
+      commit:
+        example: a1b2c3d
+        type: string
+      go_version:
+        example: go1.25.0
+        type: string
+      repository:
+        example: https://github.com/choffmann/chat-room
+        type: string
+      version:
+        example: v1.0.0
+        type: string
+    type: object
+  CreateRoomRequest:
+    properties:
+      description:
+        example: General chat room
+        type: string
+      theme:
+        example: dark
+        type: string
+    type: object
+  CreateRoomResponse:
+    properties:
+      roomID:
+        example: 1
+        type: integer
+    type: object
+  CreateUserRequest:
+    properties:
+      additionalInfo:
+        $ref: '#/definitions/UserAdditionalInfo'
+      firstName:
+        example: John
+        type: string
+      lastName:
+        example: Doe
+        type: string
+      name:
+        example: johndoe
+        type: string
+    type: object
+  MessageAdditionalInfo:
+    properties:
+      format:
+        example: markdown
+        type: string
+      modified:
+        example: true
+        type: boolean
+    type: object
+  MessagePatchRequest:
+    properties:
+      additionalInfo:
+        $ref: '#/definitions/MessageAdditionalInfo'
+      message:
+        example: Hello everyone! (edited)
+        type: string
+    type: object
+  MessagePutRequest:
+    properties:
+      additionalInfo:
+        $ref: '#/definitions/MessageAdditionalInfo'
+      message:
+        example: Completely new message content
+        type: string
+    type: object
+  MessagesListResponse:
+    properties:
+      messages:
+        items:
+          $ref: '#/definitions/OutgoingMessage'
+        type: array
+    type: object
+  OutgoingMessage:
+    properties:
+      additionalInfo:
+        $ref: '#/definitions/MessageAdditionalInfo'
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      message:
+        example: Hello everyone!
+        type: string
+      timestamp:
+        example: "2024-04-09T12:35:10.123456789Z"
+        type: string
+      type:
+        example: message
+        type: string
+      user:
+        $ref: '#/definitions/User'
+    type: object
+  PatchRoomRequest:
+    properties:
+      theme:
+        example: light
+        type: string
+    type: object
+  PatchUserRequest:
+    properties:
+      additionalInfo:
+        $ref: '#/definitions/UserAdditionalInfo'
+      firstName:
+        example: Jane
+        type: string
+      name:
+        example: janesmith
+        type: string
+    type: object
+  PutRoomRequest:
+    properties:
+      description:
+        example: Updated chat room
+        type: string
+      theme:
+        example: dark
+        type: string
+    type: object
+  RoomAdditionalInfo:
+    properties:
+      description:
+        example: General chat room
+        type: string
+      theme:
+        example: dark
+        type: string
+    type: object
+  RoomResponse:
+    properties:
+      additionalInfo:
+        $ref: '#/definitions/RoomAdditionalInfo'
+      id:
+        example: 1
+        type: integer
+      onlineUser:
+        example: 3
+        type: integer
+    type: object
+  RoomsListResponse:
+    properties:
+      rooms:
+        items:
+          $ref: '#/definitions/RoomResponse'
+        type: array
+    type: object
+  UpdateUserRequest:
+    properties:
+      additionalInfo:
+        $ref: '#/definitions/UserAdditionalInfo'
+      firstName:
+        example: Jane
+        type: string
+      lastName:
+        example: Smith
+        type: string
+      name:
+        example: janesmith
+        type: string
+    type: object
+  User:
+    properties:
+      additionalInfo:
+        $ref: '#/definitions/UserAdditionalInfo'
+      firstName:
+        example: John
+        type: string
+      id:
+        example: 9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c
+        type: string
+      lastName:
+        example: Doe
+        type: string
+      name:
+        example: johndoe
+        type: string
+    type: object
+  UserAdditionalInfo:
+    properties:
+      avatar:
+        example: https://example.com/avatar.png
+        type: string
+      bio:
+        example: Software developer
+        type: string
+    type: object
+  UserWithRoom:
+    properties:
+      roomId:
+        example: 1
+        type: integer
+      user:
+        $ref: '#/definitions/User'
+    type: object
+  UsersListResponse:
+    properties:
+      users:
+        items:
+          $ref: '#/definitions/User'
+        type: array
+    type: object
+  UsersWithRoomListResponse:
+    properties:
+      users:
+        items:
+          $ref: '#/definitions/UserWithRoom'
+        type: array
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: |-
+    A lightweight real-time chat backend written in Go. The server manages ephemeral chat rooms where clients connect via WebSocket to exchange messages. Rooms are created on-demand and automatically deleted after 3 hours of inactivity.
+
+    ## Additional Info
+    Many resources (rooms, users, messages) carry an `additionalInfo` field. This is a free-form JSON object that the server stores as-is — it has no predefined schema and is never validated or interpreted by the backend.
+
+    Use it to attach arbitrary metadata to any resource, for example:
+    - **Rooms:** theme, description, language, or feature flags for your UI.
+    - **Users:** avatar URL, bio, status text, or client-specific preferences.
+    - **Messages:** formatting hints, link previews, or custom reaction data.
+
+    The field is always optional. If omitted it defaults to an empty object (`{}`). On `PATCH` requests the provided keys are merged into the existing object; on `PUT` the entire object is replaced.
+  title: Chat Room API
+  version: "1.0"
+paths:
+  /healthz:
+    get:
+      description: Simple liveness probe. Returns plain text "OK".
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Health check
+      tags:
+      - info
+  /info:
+    get:
+      description: Exposes metadata about the running binary. Field values are populated
+        at build time; when unavailable, they default to "unknown".
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/BuildInfo'
+      summary: Get build info
+      tags:
+      - info
+  /join/{roomID}:
+    get:
+      description: |-
+        Upgrades the HTTP connection to WebSocket and joins the requested room.
+
+        **Authentication options:**
+        - `userId` (UUID): Join as a registered user from the registry. Takes precedence over `user`.
+        - `user` (string): Join as an ephemeral user with the given display name.
+        - Neither: Server assigns a random display name.
+
+        **User info extraction:** Set `userInfo=true` to receive a self-join message with a `self` flag, allowing clients to extract their user information.
+
+        **Connection management:** Server sends ping every 30s, expects pong within 60s. Max message size: 10 MiB.
+      parameters:
+      - description: Room ID
+        in: path
+        name: roomID
+        required: true
+        type: integer
+      - description: Registered user UUID
+        in: query
+        name: userId
+        type: string
+      - description: Ephemeral display name
+        in: query
+        name: user
+        type: string
+      - description: Enable self-join message with user info
+        in: query
+        name: userInfo
+        type: boolean
+      responses:
+        "101":
+          description: Switching Protocols - WebSocket connection established
+        "400":
+          description: invalid room or user ID
+          schema:
+            type: string
+        "404":
+          description: room or user not found
+          schema:
+            type: string
+      summary: Join room via WebSocket
+      tags:
+      - websocket
+  /rooms:
+    get:
+      description: Retrieves all currently active rooms with user counts and metadata.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/RoomsListResponse'
+      summary: List all rooms
+      tags:
+      - rooms
+    post:
+      consumes:
+      - application/json
+      description: Creates a new chat room. The request body is optional and can carry
+        additional metadata that will be echoed back when the room is queried. If
+        the JSON payload cannot be decoded, an empty additionalInfo is used instead.
+      parameters:
+      - description: Optional room metadata (arbitrary JSON object)
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/CreateRoomRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/CreateRoomResponse'
+      summary: Create a new room
+      tags:
+      - rooms
+  /rooms/{roomID}:
+    get:
+      description: Returns metadata for a specific room including online user count.
+      parameters:
+      - description: Room ID
+        in: path
+        name: roomID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/RoomResponse'
+        "400":
+          description: can't parse room id to uint
+          schema:
+            type: string
+        "404":
+          description: room not found
+          schema:
+            type: string
+      summary: Get room details
+      tags:
+      - rooms
+    patch:
+      consumes:
+      - application/json
+      description: Partially updates room metadata. The provided fields are merged
+        with existing additionalInfo, preserving fields not included in the request.
+      parameters:
+      - description: Room ID
+        in: path
+        name: roomID
+        required: true
+        type: integer
+      - description: Fields to merge into room metadata (arbitrary JSON object)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/PatchRoomRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/RoomResponse'
+        "400":
+          description: invalid request body
+          schema:
+            type: string
+        "404":
+          description: room not found
+          schema:
+            type: string
+      summary: Partially update room metadata
+      tags:
+      - rooms
+    put:
+      consumes:
+      - application/json
+      description: Replaces all room metadata. This completely overwrites the existing
+        additionalInfo.
+      parameters:
+      - description: Room ID
+        in: path
+        name: roomID
+        required: true
+        type: integer
+      - description: New room metadata (arbitrary JSON object)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/PutRoomRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/RoomResponse'
+        "400":
+          description: invalid request body
+          schema:
+            type: string
+        "404":
+          description: room not found
+          schema:
+            type: string
+      summary: Replace room metadata
+      tags:
+      - rooms
+  /rooms/{roomID}/messages:
+    get:
+      description: Returns all messages that have been sent in a specific room. Messages
+        are stored in memory and include system messages (joins/leaves) as well as
+        user messages. Only messages smaller than 2 MiB are stored.
+      parameters:
+      - description: Room ID
+        in: path
+        name: roomID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/MessagesListResponse'
+        "400":
+          description: can't parse room id to uint
+          schema:
+            type: string
+        "404":
+          description: room not found
+          schema:
+            type: string
+      summary: Get all messages in a room
+      tags:
+      - messages
+  /rooms/{roomID}/messages/{messageID}:
+    delete:
+      description: Marks a message as deleted. The message is not actually removed
+        but its content is replaced with "deleted" and a deleted flag is added to
+        additionalInfo.
+      parameters:
+      - description: Room ID
+        in: path
+        name: roomID
+        required: true
+        type: integer
+      - description: Message UUID
+        in: path
+        name: messageID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/OutgoingMessage'
+        "400":
+          description: can't parse room id or message id
+          schema:
+            type: string
+        "404":
+          description: room or message not found
+          schema:
+            type: string
+      summary: Delete a message
+      tags:
+      - messages
+    get:
+      description: Retrieves a specific message from a room by its ID.
+      parameters:
+      - description: Room ID
+        in: path
+        name: roomID
+        required: true
+        type: integer
+      - description: Message UUID
+        in: path
+        name: messageID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/OutgoingMessage'
+        "400":
+          description: can't parse room id or message id
+          schema:
+            type: string
+        "404":
+          description: room or message not found
+          schema:
+            type: string
+      summary: Get a specific message
+      tags:
+      - messages
+    patch:
+      consumes:
+      - application/json
+      description: 'Partially updates a specific message. You can update the message
+        text, additionalInfo, or both. Only provided fields are updated. The server
+        automatically sets modified: true in additionalInfo.'
+      parameters:
+      - description: Room ID
+        in: path
+        name: roomID
+        required: true
+        type: integer
+      - description: Message UUID
+        in: path
+        name: messageID
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/MessagePatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/OutgoingMessage'
+        "400":
+          description: invalid request
+          schema:
+            type: string
+        "404":
+          description: room or message not found
+          schema:
+            type: string
+      summary: Partially update a message
+      tags:
+      - messages
+    put:
+      consumes:
+      - application/json
+      description: 'Completely replaces a message. Unlike PATCH, this requires all
+        fields and replaces the entire message content. The server automatically sets
+        modified: true in additionalInfo.'
+      parameters:
+      - description: Room ID
+        in: path
+        name: roomID
+        required: true
+        type: integer
+      - description: Message UUID
+        in: path
+        name: messageID
+        required: true
+        type: string
+      - description: New message content
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/MessagePutRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/OutgoingMessage'
+        "400":
+          description: invalid request
+          schema:
+            type: string
+        "404":
+          description: room or message not found
+          schema:
+            type: string
+      summary: Replace a message
+      tags:
+      - messages
+  /rooms/{roomID}/users:
+    get:
+      description: Returns all users currently connected to a specific room.
+      parameters:
+      - description: Room ID
+        in: path
+        name: roomID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/UsersListResponse'
+        "400":
+          description: invalid room id
+          schema:
+            type: string
+        "404":
+          description: room not found
+          schema:
+            type: string
+      summary: Get users in a room
+      tags:
+      - rooms
+  /rooms/users:
+    get:
+      description: Returns all users currently connected to any room, along with their
+        room IDs.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/UsersWithRoomListResponse'
+      summary: Get all users in all rooms
+      tags:
+      - rooms
+  /users:
+    get:
+      description: Returns all users registered in the user registry. Returns an empty
+        array if no users are registered.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/User'
+            type: array
+      summary: List all registered users
+      tags:
+      - users
+    post:
+      consumes:
+      - application/json
+      description: Creates a new user in the user registry. All fields are optional.
+        This allows pre-registering users before they join rooms.
+      parameters:
+      - description: User data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/CreateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/User'
+        "400":
+          description: invalid request body
+          schema:
+            type: string
+      summary: Create a user
+      tags:
+      - users
+  /users/{userID}:
+    delete:
+      description: Deletes a user from the user registry.
+      parameters:
+      - description: User UUID
+        in: path
+        name: userID
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: invalid user id
+          schema:
+            type: string
+        "404":
+          description: user not found
+          schema:
+            type: string
+      summary: Delete a user
+      tags:
+      - users
+    get:
+      description: Returns a specific user from the user registry.
+      parameters:
+      - description: User UUID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/User'
+        "400":
+          description: invalid user id
+          schema:
+            type: string
+        "404":
+          description: user id not found
+          schema:
+            type: string
+      summary: Get a user
+      tags:
+      - users
+    patch:
+      consumes:
+      - application/json
+      description: Partially updates user information. Only provided fields are updated,
+        others remain unchanged.
+      parameters:
+      - description: User UUID
+        in: path
+        name: userID
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/PatchUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/User'
+        "400":
+          description: invalid user id or request body
+          schema:
+            type: string
+        "404":
+          description: user not found
+          schema:
+            type: string
+      summary: Partially update a user
+      tags:
+      - users
+    put:
+      consumes:
+      - application/json
+      description: Completely replaces all user information. Fields not included will
+        be cleared.
+      parameters:
+      - description: User UUID
+        in: path
+        name: userID
+        required: true
+        type: string
+      - description: New user data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/UpdateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/User'
+        "400":
+          description: invalid user id or request body
+          schema:
+            type: string
+        "404":
+          description: user not found
+          schema:
+            type: string
+      summary: Replace a user
+      tags:
+      - users
+swagger: "2.0"

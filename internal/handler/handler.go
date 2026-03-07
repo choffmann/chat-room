@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
 type Handler struct {
@@ -73,6 +74,10 @@ func New(hub *chat.Hub, userRegistry *user.Registry, logger *slog.Logger) *Handl
 func (h *Handler) RegisterRoutes(r *mux.Router, legacyRoutes bool) {
 	v1 := r.PathPrefix("/api/v1").Subrouter()
 	h.registerV1Routes(v1)
+
+	v1.PathPrefix("/swagger/").Handler(httpSwagger.Handler(
+		httpSwagger.URL("/api/v1/swagger/doc.json"),
+	))
 
 	if legacyRoutes {
 		h.registerV1Routes(r)

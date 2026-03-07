@@ -10,7 +10,26 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// GET /rooms/{roomID}/messages
+type MessagePatchRequest struct {
+	Message        *string              `json:"message,omitempty" example:"Hello everyone! (edited)"`
+	AdditionalInfo model.AdditionalInfo `json:"additionalInfo,omitempty" swaggertype:"object"`
+}
+
+type MessagePutRequest struct {
+	Message        string               `json:"message" example:"Completely new message content"`
+	AdditionalInfo model.AdditionalInfo `json:"additionalInfo,omitempty" swaggertype:"object"`
+}
+
+// getRoomMessagesHandler godoc
+// @Summary      Get all messages in a room
+// @Description  Returns all messages that have been sent in a specific room. Messages are stored in memory and include system messages (joins/leaves) as well as user messages. Only messages smaller than 2 MiB are stored.
+// @Tags         messages
+// @Produce      json
+// @Param        roomID  path      int  true  "Room ID"
+// @Success      200     {object}  MessagesListResponse
+// @Failure      400     {string}  string  "can't parse room id to uint"
+// @Failure      404     {string}  string  "room not found"
+// @Router       /rooms/{roomID}/messages [get]
 func (h *Handler) getRoomMessagesHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
@@ -32,7 +51,17 @@ func (h *Handler) getRoomMessagesHandler(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(map[string][]model.OutgoingMessage{"messages": messages})
 }
 
-// GET /rooms/{roomID}/messages/{messageID}
+// getRoomMessageHandler godoc
+// @Summary      Get a specific message
+// @Description  Retrieves a specific message from a room by its ID.
+// @Tags         messages
+// @Produce      json
+// @Param        roomID     path      int     true  "Room ID"
+// @Param        messageID  path      string  true  "Message UUID"
+// @Success      200        {object}  OutgoingMessageDoc
+// @Failure      400        {string}  string  "can't parse room id or message id"
+// @Failure      404        {string}  string  "room or message not found"
+// @Router       /rooms/{roomID}/messages/{messageID} [get]
 func (h *Handler) getRoomMessageHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
@@ -67,7 +96,19 @@ func (h *Handler) getRoomMessageHandler(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(message)
 }
 
-// PATCH /rooms/{roomID}/messages/{messageID}
+// patchRoomMessageHandler godoc
+// @Summary      Partially update a message
+// @Description  Partially updates a specific message. You can update the message text, additionalInfo, or both. Only provided fields are updated. The server automatically sets modified: true in additionalInfo.
+// @Tags         messages
+// @Accept       json
+// @Produce      json
+// @Param        roomID     path      int                  true  "Room ID"
+// @Param        messageID  path      string               true  "Message UUID"
+// @Param        body       body      MessagePatchRequestDoc  true  "Fields to update"
+// @Success      200        {object}  OutgoingMessageDoc
+// @Failure      400        {string}  string  "invalid request"
+// @Failure      404        {string}  string  "room or message not found"
+// @Router       /rooms/{roomID}/messages/{messageID} [patch]
 func (h *Handler) patchRoomMessageHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
@@ -91,10 +132,7 @@ func (h *Handler) patchRoomMessageHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var patchRequest struct {
-		Message        *string              `json:"message,omitempty"`
-		AdditionalInfo model.AdditionalInfo `json:"additionalInfo,omitempty"`
-	}
+	var patchRequest MessagePatchRequest
 	decoder := json.NewDecoder(r.Body)
 	err = decoder.Decode(&patchRequest)
 	if err != nil {
@@ -132,7 +170,19 @@ func (h *Handler) patchRoomMessageHandler(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(updatedMessage)
 }
 
-// PUT /rooms/{roomID}/messages/{messageID}
+// putRoomMessageHandler godoc
+// @Summary      Replace a message
+// @Description  Completely replaces a message. Unlike PATCH, this requires all fields and replaces the entire message content. The server automatically sets modified: true in additionalInfo.
+// @Tags         messages
+// @Accept       json
+// @Produce      json
+// @Param        roomID     path      int                true  "Room ID"
+// @Param        messageID  path      string             true  "Message UUID"
+// @Param        body       body      MessagePutRequestDoc  true  "New message content"
+// @Success      200        {object}  OutgoingMessageDoc
+// @Failure      400        {string}  string  "invalid request"
+// @Failure      404        {string}  string  "room or message not found"
+// @Router       /rooms/{roomID}/messages/{messageID} [put]
 func (h *Handler) putRoomMessageHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)
@@ -156,10 +206,7 @@ func (h *Handler) putRoomMessageHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var putRequest struct {
-		Message        string               `json:"message"`
-		AdditionalInfo model.AdditionalInfo `json:"additionalInfo,omitempty"`
-	}
+	var putRequest MessagePutRequest
 	decoder := json.NewDecoder(r.Body)
 	err = decoder.Decode(&putRequest)
 	if err != nil {
@@ -185,7 +232,17 @@ func (h *Handler) putRoomMessageHandler(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(updatedMessage)
 }
 
-// DELETE /rooms/{roomID}/messages/{messageID}
+// deleteRoomMessageHandler godoc
+// @Summary      Delete a message
+// @Description  Marks a message as deleted. The message is not actually removed but its content is replaced with "deleted" and a deleted flag is added to additionalInfo.
+// @Tags         messages
+// @Produce      json
+// @Param        roomID     path      int     true  "Room ID"
+// @Param        messageID  path      string  true  "Message UUID"
+// @Success      200        {object}  OutgoingMessageDoc
+// @Failure      400        {string}  string  "can't parse room id or message id"
+// @Failure      404        {string}  string  "room or message not found"
+// @Router       /rooms/{roomID}/messages/{messageID} [delete]
 func (h *Handler) deleteRoomMessageHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	roomID, err := strconv.ParseUint(vars["roomID"], 10, 64)

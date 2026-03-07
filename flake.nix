@@ -31,7 +31,7 @@
         pname = "chat-room";
         inherit version;
         src = ./.;
-        vendorHash = "sha256-6utki0TKZJPRng77W6+xwfNLpfChGFIhzcmNnTsOtbY=";
+        vendorHash = "sha256-vo1uKHYq8IdEX0YDsIKoRQ0t+RFby74STEhdi3zRh+8=";
         subPackages = ["cmd/chat-room"];
         ldflags = [
           "-X github.com/choffmann/chat-room/internal/config.Version=v${version}"

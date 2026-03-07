@@ -9,14 +9,29 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// GET /users
+// getAllUsersHandler godoc
+// @Summary      List all registered users
+// @Description  Returns all users registered in the user registry. Returns an empty array if no users are registered.
+// @Tags         users
+// @Produce      json
+// @Success      200  {array}  UserDoc
+// @Router       /users [get]
 func (h *Handler) getAllUsersHandler(w http.ResponseWriter, r *http.Request) {
 	users := h.userRegistry.GetAllUsers()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(users)
 }
 
-// POST /users
+// createUserHandler godoc
+// @Summary      Create a user
+// @Description  Creates a new user in the user registry. All fields are optional. This allows pre-registering users before they join rooms.
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Param        body  body      CreateUserRequestDoc  true  "User data"
+// @Success      201   {object}  UserDoc
+// @Failure      400   {string}  string  "invalid request body"
+// @Router       /users [post]
 func (h *Handler) createUserHandler(w http.ResponseWriter, r *http.Request) {
 	var req model.CreateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -32,7 +47,16 @@ func (h *Handler) createUserHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(user)
 }
 
-// GET /users/{userID}
+// getUserHandler godoc
+// @Summary      Get a user
+// @Description  Returns a specific user from the user registry.
+// @Tags         users
+// @Produce      json
+// @Param        userID  path      string  true  "User UUID"
+// @Success      200     {object}  UserDoc
+// @Failure      400     {string}  string  "invalid user id"
+// @Failure      404     {string}  string  "user id not found"
+// @Router       /users/{userID} [get]
 func (h *Handler) getUserHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	userID, err := uuid.Parse(vars["userID"])
@@ -53,7 +77,18 @@ func (h *Handler) getUserHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(user)
 }
 
-// PUT /users/{userID}
+// putUserHandler godoc
+// @Summary      Replace a user
+// @Description  Completely replaces all user information. Fields not included will be cleared.
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Param        userID  path      string                  true  "User UUID"
+// @Param        body    body      UpdateUserRequestDoc  true  "New user data"
+// @Success      200     {object}  UserDoc
+// @Failure      400     {string}  string  "invalid user id or request body"
+// @Failure      404     {string}  string  "user not found"
+// @Router       /users/{userID} [put]
 func (h *Handler) putUserHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	userID, err := uuid.Parse(vars["userID"])
@@ -81,7 +116,18 @@ func (h *Handler) putUserHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(user)
 }
 
-// PATCH /users/{userID}
+// patchUserHandler godoc
+// @Summary      Partially update a user
+// @Description  Partially updates user information. Only provided fields are updated, others remain unchanged.
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Param        userID  path      string  true  "User UUID"
+// @Param        body    body      PatchUserRequestDoc  true  "Fields to update"
+// @Success      200     {object}  UserDoc
+// @Failure      400     {string}  string  "invalid user id or request body"
+// @Failure      404     {string}  string  "user not found"
+// @Router       /users/{userID} [patch]
 func (h *Handler) patchUserHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	userID, err := uuid.Parse(vars["userID"])
@@ -109,7 +155,15 @@ func (h *Handler) patchUserHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(user)
 }
 
-// DELETE /users/{userID}
+// deleteUserHandler godoc
+// @Summary      Delete a user
+// @Description  Deletes a user from the user registry.
+// @Tags         users
+// @Param        userID  path      string  true  "User UUID"
+// @Success      204     "No Content"
+// @Failure      400     {string}  string  "invalid user id"
+// @Failure      404     {string}  string  "user not found"
+// @Router       /users/{userID} [delete]
 func (h *Handler) deleteUserHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	userID, err := uuid.Parse(vars["userID"])
@@ -128,7 +182,16 @@ func (h *Handler) deleteUserHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GET /rooms/{roomID}/users
+// getRoomUsersHandler godoc
+// @Summary      Get users in a room
+// @Description  Returns all users currently connected to a specific room.
+// @Tags         rooms
+// @Produce      json
+// @Param        roomID  path      int  true  "Room ID"
+// @Success      200     {object}  UsersListResponse
+// @Failure      400     {string}  string  "invalid room id"
+// @Failure      404     {string}  string  "room not found"
+// @Router       /rooms/{roomID}/users [get]
 func (h *Handler) getRoomUsersHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	roomID, err := model.ParseRoomID(vars["roomID"])
@@ -150,7 +213,13 @@ func (h *Handler) getRoomUsersHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string][]model.User{"users": users})
 }
 
-// GET /rooms/users
+// getAllUsersInRoomsHandler godoc
+// @Summary      Get all users in all rooms
+// @Description  Returns all users currently connected to any room, along with their room IDs.
+// @Tags         rooms
+// @Produce      json
+// @Success      200  {object}  UsersWithRoomListResponse
+// @Router       /rooms/users [get]
 func (h *Handler) getAllUsersInRoomsHandler(w http.ResponseWriter, r *http.Request) {
 	usersWithRooms := h.hub.GetAllUsersWithRooms()
 	w.Header().Set("Content-Type", "application/json")

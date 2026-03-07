@@ -1,0 +1,1162 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "A lightweight real-time chat backend written in Go. The server manages ephemeral chat rooms where clients connect via WebSocket to exchange messages. Rooms are created on-demand and automatically deleted after 3 hours of inactivity.\n\n## Additional Info\nMany resources (rooms, users, messages) carry an `additionalInfo` field. This is a free-form JSON object that the server stores as-is — it has no predefined schema and is never validated or interpreted by the backend.\n\nUse it to attach arbitrary metadata to any resource, for example:\n- **Rooms:** theme, description, language, or feature flags for your UI.\n- **Users:** avatar URL, bio, status text, or client-specific preferences.\n- **Messages:** formatting hints, link previews, or custom reaction data.\n\nThe field is always optional. If omitted it defaults to an empty object (`{}`). On `PATCH` requests the provided keys are merged into the existing object; on `PUT` the entire object is replaced.",
+        "title": "Chat Room API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/api/v1",
+    "paths": {
+        "/healthz": {
+            "get": {
+                "description": "Simple liveness probe. Returns plain text \"OK\".",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "info"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/info": {
+            "get": {
+                "description": "Exposes metadata about the running binary. Field values are populated at build time; when unavailable, they default to \"unknown\".",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "info"
+                ],
+                "summary": "Get build info",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/BuildInfo"
+                        }
+                    }
+                }
+            }
+        },
+        "/join/{roomID}": {
+            "get": {
+                "description": "Upgrades the HTTP connection to WebSocket and joins the requested room.\n\n**Authentication options:**\n- `userId` (UUID): Join as a registered user from the registry. Takes precedence over `user`.\n- `user` (string): Join as an ephemeral user with the given display name.\n- Neither: Server assigns a random display name.\n\n**User info extraction:** Set `userInfo=true` to receive a self-join message with a `self` flag, allowing clients to extract their user information.\n\n**Connection management:** Server sends ping every 30s, expects pong within 60s. Max message size: 10 MiB.",
+                "tags": [
+                    "websocket"
+                ],
+                "summary": "Join room via WebSocket",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Room ID",
+                        "name": "roomID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Registered user UUID",
+                        "name": "userId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ephemeral display name",
+                        "name": "user",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Enable self-join message with user info",
+                        "name": "userInfo",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "description": "Switching Protocols - WebSocket connection established"
+                    },
+                    "400": {
+                        "description": "invalid room or user ID",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "room or user not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/rooms": {
+            "get": {
+                "description": "Retrieves all currently active rooms with user counts and metadata.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rooms"
+                ],
+                "summary": "List all rooms",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/RoomsListResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a new chat room. The request body is optional and can carry additional metadata that will be echoed back when the room is queried. If the JSON payload cannot be decoded, an empty additionalInfo is used instead.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rooms"
+                ],
+                "summary": "Create a new room",
+                "parameters": [
+                    {
+                        "description": "Optional room metadata (arbitrary JSON object)",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/CreateRoomRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/CreateRoomResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/rooms/users": {
+            "get": {
+                "description": "Returns all users currently connected to any room, along with their room IDs.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rooms"
+                ],
+                "summary": "Get all users in all rooms",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/UsersWithRoomListResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/rooms/{roomID}": {
+            "get": {
+                "description": "Returns metadata for a specific room including online user count.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rooms"
+                ],
+                "summary": "Get room details",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Room ID",
+                        "name": "roomID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/RoomResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "can't parse room id to uint",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "room not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Replaces all room metadata. This completely overwrites the existing additionalInfo.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rooms"
+                ],
+                "summary": "Replace room metadata",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Room ID",
+                        "name": "roomID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New room metadata (arbitrary JSON object)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/PutRoomRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/RoomResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "room not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Partially updates room metadata. The provided fields are merged with existing additionalInfo, preserving fields not included in the request.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rooms"
+                ],
+                "summary": "Partially update room metadata",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Room ID",
+                        "name": "roomID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to merge into room metadata (arbitrary JSON object)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/PatchRoomRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/RoomResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "room not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/rooms/{roomID}/messages": {
+            "get": {
+                "description": "Returns all messages that have been sent in a specific room. Messages are stored in memory and include system messages (joins/leaves) as well as user messages. Only messages smaller than 2 MiB are stored.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Get all messages in a room",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Room ID",
+                        "name": "roomID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/MessagesListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "can't parse room id to uint",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "room not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/rooms/{roomID}/messages/{messageID}": {
+            "get": {
+                "description": "Retrieves a specific message from a room by its ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Get a specific message",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Room ID",
+                        "name": "roomID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Message UUID",
+                        "name": "messageID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/OutgoingMessage"
+                        }
+                    },
+                    "400": {
+                        "description": "can't parse room id or message id",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "room or message not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Completely replaces a message. Unlike PATCH, this requires all fields and replaces the entire message content. The server automatically sets modified: true in additionalInfo.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Replace a message",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Room ID",
+                        "name": "roomID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Message UUID",
+                        "name": "messageID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New message content",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/MessagePutRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/OutgoingMessage"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "room or message not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Marks a message as deleted. The message is not actually removed but its content is replaced with \"deleted\" and a deleted flag is added to additionalInfo.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Delete a message",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Room ID",
+                        "name": "roomID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Message UUID",
+                        "name": "messageID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/OutgoingMessage"
+                        }
+                    },
+                    "400": {
+                        "description": "can't parse room id or message id",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "room or message not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Partially updates a specific message. You can update the message text, additionalInfo, or both. Only provided fields are updated. The server automatically sets modified: true in additionalInfo.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Partially update a message",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Room ID",
+                        "name": "roomID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Message UUID",
+                        "name": "messageID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/MessagePatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/OutgoingMessage"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "room or message not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/rooms/{roomID}/users": {
+            "get": {
+                "description": "Returns all users currently connected to a specific room.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rooms"
+                ],
+                "summary": "Get users in a room",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Room ID",
+                        "name": "roomID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/UsersListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid room id",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "room not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/users": {
+            "get": {
+                "description": "Returns all users registered in the user registry. Returns an empty array if no users are registered.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "List all registered users",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/User"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a new user in the user registry. All fields are optional. This allows pre-registering users before they join rooms.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Create a user",
+                "parameters": [
+                    {
+                        "description": "User data",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/CreateUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/User"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{userID}": {
+            "get": {
+                "description": "Returns a specific user from the user registry.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User UUID",
+                        "name": "userID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/User"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid user id",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "user id not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Completely replaces all user information. Fields not included will be cleared.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Replace a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User UUID",
+                        "name": "userID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New user data",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/UpdateUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/User"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid user id or request body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "user not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes a user from the user registry.",
+                "tags": [
+                    "users"
+                ],
+                "summary": "Delete a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User UUID",
+                        "name": "userID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "invalid user id",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "user not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Partially updates user information. Only provided fields are updated, others remain unchanged.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Partially update a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User UUID",
+                        "name": "userID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/PatchUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/User"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid user id or request body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "user not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "BuildInfo": {
+            "type": "object",
+            "properties": {
+                "build_time": {
+                    "type": "string",
+                    "example": "2024-04-09T12:45:00Z"
+                },
+                "commit": {
+                    "type": "string",
+                    "example": "a1b2c3d"
+                },
+                "go_version": {
+                    "type": "string",
+                    "example": "go1.25.0"
+                },
+                "repository": {
+                    "type": "string",
+                    "example": "https://github.com/choffmann/chat-room"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "v1.0.0"
+                }
+            }
+        },
+        "CreateRoomRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "example": "General chat room"
+                },
+                "theme": {
+                    "type": "string",
+                    "example": "dark"
+                }
+            }
+        },
+        "CreateRoomResponse": {
+            "type": "object",
+            "properties": {
+                "roomID": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "CreateUserRequest": {
+            "type": "object",
+            "properties": {
+                "additionalInfo": {
+                    "$ref": "#/definitions/UserAdditionalInfo"
+                },
+                "firstName": {
+                    "type": "string",
+                    "example": "John"
+                },
+                "lastName": {
+                    "type": "string",
+                    "example": "Doe"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "johndoe"
+                }
+            }
+        },
+        "MessageAdditionalInfo": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "example": "markdown"
+                },
+                "modified": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "MessagePatchRequest": {
+            "type": "object",
+            "properties": {
+                "additionalInfo": {
+                    "$ref": "#/definitions/MessageAdditionalInfo"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Hello everyone! (edited)"
+                }
+            }
+        },
+        "MessagePutRequest": {
+            "type": "object",
+            "properties": {
+                "additionalInfo": {
+                    "$ref": "#/definitions/MessageAdditionalInfo"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Completely new message content"
+                }
+            }
+        },
+        "MessagesListResponse": {
+            "type": "object",
+            "properties": {
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/OutgoingMessage"
+                    }
+                }
+            }
+        },
+        "OutgoingMessage": {
+            "type": "object",
+            "properties": {
+                "additionalInfo": {
+                    "$ref": "#/definitions/MessageAdditionalInfo"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Hello everyone!"
+                },
+                "timestamp": {
+                    "type": "string",
+                    "example": "2024-04-09T12:35:10.123456789Z"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "message"
+                },
+                "user": {
+                    "$ref": "#/definitions/User"
+                }
+            }
+        },
+        "PatchRoomRequest": {
+            "type": "object",
+            "properties": {
+                "theme": {
+                    "type": "string",
+                    "example": "light"
+                }
+            }
+        },
+        "PatchUserRequest": {
+            "type": "object",
+            "properties": {
+                "additionalInfo": {
+                    "$ref": "#/definitions/UserAdditionalInfo"
+                },
+                "firstName": {
+                    "type": "string",
+                    "example": "Jane"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "janesmith"
+                }
+            }
+        },
+        "PutRoomRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "example": "Updated chat room"
+                },
+                "theme": {
+                    "type": "string",
+                    "example": "dark"
+                }
+            }
+        },
+        "RoomAdditionalInfo": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "example": "General chat room"
+                },
+                "theme": {
+                    "type": "string",
+                    "example": "dark"
+                }
+            }
+        },
+        "RoomResponse": {
+            "type": "object",
+            "properties": {
+                "additionalInfo": {
+                    "$ref": "#/definitions/RoomAdditionalInfo"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "onlineUser": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "RoomsListResponse": {
+            "type": "object",
+            "properties": {
+                "rooms": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/RoomResponse"
+                    }
+                }
+            }
+        },
+        "UpdateUserRequest": {
+            "type": "object",
+            "properties": {
+                "additionalInfo": {
+                    "$ref": "#/definitions/UserAdditionalInfo"
+                },
+                "firstName": {
+                    "type": "string",
+                    "example": "Jane"
+                },
+                "lastName": {
+                    "type": "string",
+                    "example": "Smith"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "janesmith"
+                }
+            }
+        },
+        "User": {
+            "type": "object",
+            "properties": {
+                "additionalInfo": {
+                    "$ref": "#/definitions/UserAdditionalInfo"
+                },
+                "firstName": {
+                    "type": "string",
+                    "example": "John"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c"
+                },
+                "lastName": {
+                    "type": "string",
+                    "example": "Doe"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "johndoe"
+                }
+            }
+        },
+        "UserAdditionalInfo": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string",
+                    "example": "https://example.com/avatar.png"
+                },
+                "bio": {
+                    "type": "string",
+                    "example": "Software developer"
+                }
+            }
+        },
+        "UserWithRoom": {
+            "type": "object",
+            "properties": {
+                "roomId": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "user": {
+                    "$ref": "#/definitions/User"
+                }
+            }
+        },
+        "UsersListResponse": {
+            "type": "object",
+            "properties": {
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/User"
+                    }
+                }
+            }
+        },
+        "UsersWithRoomListResponse": {
+            "type": "object",
+            "properties": {
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/UserWithRoom"
+                    }
+                }
+            }
+        }
+    }
+}
