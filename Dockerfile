@@ -34,7 +34,7 @@ RUN go build -o "bin/chat-room" \
 #############################################
 # Runner go
 #############################################
-FROM alpine:3.22 AS runner
+FROM alpine:3.23 AS runner
 
 EXPOSE 8080
 
