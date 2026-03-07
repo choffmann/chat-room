@@ -1,0 +1,15 @@
+services:
+  chat-room:
+    build:
+      context: .
+      args:
+        APP_GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        APP_GIT_REPOSITORY: https://github.com/choffmann/chat-room
+        APP_BUILD_TIME: ${BUILD_TIME:-unknown}
+    ports:
+      - "8080:8080"
+    environment:
+      - LOG_LEVEL=info
+      - LOG_FORMAT=text
+      - BASE_URL=localhost:8080
+      - LEGACY_ROUTES=true
