@@ -22,7 +22,7 @@ func main() {
 	h := handler.New(hub, userRegistry, logger)
 
 	r := mux.NewRouter()
-	h.RegisterRoutes(r)
+	h.RegisterRoutes(r, config.LegacyRoutes())
 
 	httpHandler := handler.CORSMiddleware(r)
 

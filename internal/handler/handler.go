@@ -70,7 +70,16 @@ func New(hub *chat.Hub, userRegistry *user.Registry, logger *slog.Logger) *Handl
 	}
 }
 
-func (h *Handler) RegisterRoutes(r *mux.Router) {
+func (h *Handler) RegisterRoutes(r *mux.Router, legacyRoutes bool) {
+	v1 := r.PathPrefix("/api/v1").Subrouter()
+	h.registerV1Routes(v1)
+
+	if legacyRoutes {
+		h.registerV1Routes(r)
+	}
+}
+
+func (h *Handler) registerV1Routes(r *mux.Router) {
 	// Room routes
 	r.HandleFunc("/rooms", h.createRoomHandler).Methods("POST")
 	r.HandleFunc("/rooms", h.getAllRoomsHandler).Methods("GET")
