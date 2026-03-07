@@ -148,7 +148,7 @@ func TestHubGetAllUsersWithRooms(t *testing.T) {
 }
 
 func TestMessageTypeValidation(t *testing.T) {
-	validTypes := []model.MessageType{model.SystemMessage, "message", "image"}
+	validTypes := []model.MessageType{model.SystemMessage, "message", "image", "poll", "custom_event"}
 
 	for _, msgType := range validTypes {
 		msg := model.OutgoingMessage{

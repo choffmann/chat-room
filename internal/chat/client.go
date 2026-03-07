@@ -103,6 +103,10 @@ func (c *Client) ReadPump() {
 			break
 		}
 
+		if message.MessageType == "" {
+			message.MessageType = model.UserMessage
+		}
+
 		timestamp := time.Now()
 
 		payload := model.OutgoingMessage{

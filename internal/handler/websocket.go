@@ -26,6 +26,8 @@ import (
 // @Description
 // @Description  **User info extraction:** Set `userInfo=true` to receive a self-join message with a `self` flag, allowing clients to extract their user information.
 // @Description
+// @Description  **Message types:** The `type` field in client messages accepts any string value. Built-in types are `"message"` and `"image"`, but clients can send custom types (e.g. `"poll"`, `"reaction"`, `"file"`). If the `type` field is omitted, it defaults to `"message"`. All message types are stored in room history except `"image"`. System messages (`"system"`) are server-generated and cannot be sent by clients.
+// @Description
 // @Description  **Connection management:** Server sends ping every 30s, expects pong within 60s. Max message size: 10 MiB.
 // @Tags         websocket
 // @Param        roomID    path   int     true   "Room ID"

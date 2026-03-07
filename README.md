@@ -55,7 +55,7 @@ Connect via `GET /api/v1/join/{roomID}` to join a room. Query parameters:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `type` | string | Yes | `"message"` or `"image"` |
+| `type` | string | No | Any string. Defaults to `"message"` if omitted. |
 | `message` | string | Yes | Text content or Base64-encoded image |
 | `additionalInfo` | object | No | Arbitrary JSON metadata (see [additionalInfo](#additionalinfo)) |
 
@@ -66,6 +66,19 @@ Connect via `GET /api/v1/join/{roomID}` to join a room. Query parameters:
   "additionalInfo": {
     "replyTo": "550e8400-e29b-41d4-a716-446655440000",
     "priority": "high"
+  }
+}
+```
+
+Custom types work the same way:
+
+```json
+{
+  "type": "poll",
+  "message": "What should we do?",
+  "additionalInfo": {
+    "options": ["Option A", "Option B"],
+    "multiSelect": false
   }
 }
 ```
@@ -93,11 +106,14 @@ The server wraps the message with a unique ID, timestamp, and user info, then br
 
 ### Message Types
 
+The `type` field accepts any string value, allowing clients to define custom message types without server-side changes. If omitted, the type defaults to `"message"`.
+
 | Type | Stored | Description |
 |---|---|---|
-| `system` | Yes (< 2 MiB) | Join/leave notifications (server-generated) |
-| `message` | Yes (< 2 MiB) | Text messages |
+| `system` | Yes (< 2 MiB) | Join/leave notifications (server-generated, not sendable by clients) |
+| `message` | Yes (< 2 MiB) | Text messages (default if `type` is omitted) |
 | `image` | No | Base64-encoded images, broadcast only |
+| _custom_ | Yes (< 2 MiB) | Any other string (e.g. `"poll"`, `"reaction"`, `"file"`) |
 
 ## `additionalInfo`
 

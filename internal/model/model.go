@@ -86,6 +86,12 @@ func ParseRoomID(roomIDStr string) (uint, error) {
 	return uint(roomID), nil
 }
 
+// Non-storable types are transient or too large to keep in memory.
+var nonStorableTypes = map[MessageType]struct{}{
+	ImageMessage: {},
+}
+
 func ShouldStoreMessage(msgType MessageType) bool {
-	return msgType == SystemMessage || msgType == UserMessage
+	_, excluded := nonStorableTypes[msgType]
+	return msgType != "" && !excluded
 }

@@ -122,19 +122,19 @@ func TestShouldStoreMessage(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "Do not store user_typing events",
-			msgType:  "user_typing",
+			name:     "Do not store empty type",
+			msgType:  "",
 			expected: false,
 		},
 		{
-			name:     "Do not store message_updated events",
-			msgType:  "message_updated",
-			expected: false,
-		},
-		{
-			name:     "Do not store custom events",
+			name:     "Store custom message types",
 			msgType:  "custom_event",
-			expected: false,
+			expected: true,
+		},
+		{
+			name:     "Store poll type",
+			msgType:  "poll",
+			expected: true,
 		},
 	}
 
