@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"log/slog"
@@ -6,9 +6,7 @@ import (
 	"strings"
 )
 
-var logger = newLogger()
-
-func newLogger() *slog.Logger {
+func NewLogger() *slog.Logger {
 	levelVar := new(slog.LevelVar)
 	levelVar.Set(slog.LevelInfo)
 

@@ -1,66 +1,8 @@
-package main
+package model
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 )
-
-func TestHealthzHandler(t *testing.T) {
-	req := httptest.NewRequest("GET", "/healthz", nil)
-	w := httptest.NewRecorder()
-
-	healthzHandler(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
-	}
-
-	body := w.Body.String()
-	if body != "OK" {
-		t.Errorf("expected body 'OK', got '%s'", body)
-	}
-}
-
-func TestGetInfoHandler(t *testing.T) {
-	// Set some test values
-	version = "v1.0.0"
-	gitCommit = "abc123"
-	buildTime = "2025-01-01T00:00:00Z"
-	gitRepository = "https://github.com/choffmann/chat-room"
-
-	req := httptest.NewRequest("GET", "/info", nil)
-	w := httptest.NewRecorder()
-
-	getInfoHandler(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
-	}
-
-	var info Info
-	if err := json.NewDecoder(w.Body).Decode(&info); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-
-	if info.Version != version {
-		t.Errorf("expected version %s, got %s", version, info.Version)
-	}
-
-	if info.GitCommit != gitCommit {
-		t.Errorf("expected gitCommit %s, got %s", gitCommit, info.GitCommit)
-	}
-
-	// Check that BuildTime is set
-	if info.BuildTime.IsZero() {
-		t.Error("expected buildTime to be set")
-	}
-
-	if info.GitRepository != gitRepository {
-		t.Errorf("expected gitRepository %s, got %s", gitRepository, info.GitRepository)
-	}
-}
 
 func TestParseRoomID(t *testing.T) {
 	tests := []struct {
@@ -97,7 +39,7 @@ func TestParseRoomID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseRoomID(tt.input)
+			result, err := ParseRoomID(tt.input)
 
 			if tt.expectErr {
 				if err == nil {
@@ -150,9 +92,57 @@ func TestGetDisplayName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := getDisplayName(tt.user)
+			result := GetDisplayName(tt.user)
 			if result != tt.expected {
 				t.Errorf("expected %s, got %s", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestShouldStoreMessage(t *testing.T) {
+	tests := []struct {
+		name     string
+		msgType  MessageType
+		expected bool
+	}{
+		{
+			name:     "Store system messages",
+			msgType:  SystemMessage,
+			expected: true,
+		},
+		{
+			name:     "Store user messages",
+			msgType:  UserMessage,
+			expected: true,
+		},
+		{
+			name:     "Do not store image messages",
+			msgType:  ImageMessage,
+			expected: false,
+		},
+		{
+			name:     "Do not store user_typing events",
+			msgType:  "user_typing",
+			expected: false,
+		},
+		{
+			name:     "Do not store message_updated events",
+			msgType:  "message_updated",
+			expected: false,
+		},
+		{
+			name:     "Do not store custom events",
+			msgType:  "custom_event",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ShouldStoreMessage(tt.msgType)
+			if result != tt.expected {
+				t.Errorf("ShouldStoreMessage(%s) = %v, expected %v", tt.msgType, result, tt.expected)
 			}
 		})
 	}

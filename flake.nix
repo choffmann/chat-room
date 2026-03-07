@@ -32,11 +32,12 @@
         inherit version;
         src = ./.;
         vendorHash = "sha256-6utki0TKZJPRng77W6+xwfNLpfChGFIhzcmNnTsOtbY=";
+        subPackages = ["cmd/chat-room"];
         ldflags = [
-          "-X main.version=v${version}"
-          "-X main.gitCommit=${inputs.self.shortRev or inputs.self.dirtyShortRev or "dirty"}"
-          "-X main.gitRepository=https://github.com/choffmann/chat-room"
-          "-X main.buildTime=${buildTimestamp}"
+          "-X github.com/choffmann/chat-room/internal/config.Version=v${version}"
+          "-X github.com/choffmann/chat-room/internal/config.GitCommit=${inputs.self.shortRev or inputs.self.dirtyShortRev or "dirty"}"
+          "-X github.com/choffmann/chat-room/internal/config.GitRepository=https://github.com/choffmann/chat-room"
+          "-X github.com/choffmann/chat-room/internal/config.BuildTime=${buildTimestamp}"
         ];
       };
     });

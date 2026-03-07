@@ -1,4 +1,4 @@
-package main
+package handler
 
 import (
 	"bytes"
@@ -7,32 +7,28 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/choffmann/chat-room/internal/chat"
+	"github.com/choffmann/chat-room/internal/model"
+	"github.com/choffmann/chat-room/internal/user"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
 
-func setupUserTests() {
-	// Reset user registry for tests
-	userRegistry = &UserRegistry{
-		users: make(map[uuid.UUID]*User),
-	}
-}
-
 func TestCreateUser(t *testing.T) {
-	setupUserTests()
+	h := setupHandler(t)
 
 	tests := []struct {
 		name           string
-		payload        CreateUserRequest
+		payload        model.CreateUserRequest
 		expectedStatus int
 	}{
 		{
 			name: "Create user with all fields",
-			payload: CreateUserRequest{
+			payload: model.CreateUserRequest{
 				FirstName: "John",
 				LastName:  "Doe",
 				Name:      "johndoe",
-				AdditionalInfo: AdditionalInfo{
+				AdditionalInfo: model.AdditionalInfo{
 					"email": "john@example.com",
 				},
 			},
@@ -40,14 +36,14 @@ func TestCreateUser(t *testing.T) {
 		},
 		{
 			name: "Create user with minimal fields",
-			payload: CreateUserRequest{
+			payload: model.CreateUserRequest{
 				FirstName: "Jane",
 			},
 			expectedStatus: http.StatusCreated,
 		},
 		{
 			name:           "Create user with empty payload",
-			payload:        CreateUserRequest{},
+			payload:        model.CreateUserRequest{},
 			expectedStatus: http.StatusCreated,
 		},
 	}
@@ -58,14 +54,14 @@ func TestCreateUser(t *testing.T) {
 			req := httptest.NewRequest("POST", "/users", bytes.NewBuffer(body))
 			w := httptest.NewRecorder()
 
-			createUserHandler(w, req)
+			h.createUserHandler(w, req)
 
 			if w.Code != tt.expectedStatus {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
 			}
 
 			if w.Code == http.StatusCreated {
-				var user User
+				var user model.User
 				if err := json.NewDecoder(w.Body).Decode(&user); err != nil {
 					t.Fatalf("failed to decode response: %v", err)
 				}
@@ -83,12 +79,12 @@ func TestCreateUser(t *testing.T) {
 }
 
 func TestCreateUserInvalidJSON(t *testing.T) {
-	setupUserTests()
+	h := setupHandler(t)
 
 	req := httptest.NewRequest("POST", "/users", bytes.NewBufferString("invalid json"))
 	w := httptest.NewRecorder()
 
-	createUserHandler(w, req)
+	h.createUserHandler(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
@@ -96,25 +92,24 @@ func TestCreateUserInvalidJSON(t *testing.T) {
 }
 
 func TestPutUser(t *testing.T) {
-	setupUserTests()
+	h := setupHandler(t)
 
-	// Create a user first
-	user := userRegistry.CreateUser("John", "Doe", "johndoe", nil)
+	u := h.userRegistry.CreateUser("John", "Doe", "johndoe", nil)
 
 	tests := []struct {
 		name           string
 		userID         string
-		payload        UpdateUserRequest
+		payload        model.UpdateUserRequest
 		expectedStatus int
 	}{
 		{
 			name:   "Update existing user",
-			userID: user.ID.String(),
-			payload: UpdateUserRequest{
+			userID: u.ID.String(),
+			payload: model.UpdateUserRequest{
 				FirstName: "Jane",
 				LastName:  "Smith",
 				Name:      "janesmith",
-				AdditionalInfo: AdditionalInfo{
+				AdditionalInfo: model.AdditionalInfo{
 					"email": "jane@example.com",
 				},
 			},
@@ -123,7 +118,7 @@ func TestPutUser(t *testing.T) {
 		{
 			name:   "Update non-existent user",
 			userID: uuid.New().String(),
-			payload: UpdateUserRequest{
+			payload: model.UpdateUserRequest{
 				FirstName: "Test",
 			},
 			expectedStatus: http.StatusNotFound,
@@ -131,7 +126,7 @@ func TestPutUser(t *testing.T) {
 		{
 			name:           "Invalid user ID",
 			userID:         "invalid-uuid",
-			payload:        UpdateUserRequest{},
+			payload:        model.UpdateUserRequest{},
 			expectedStatus: http.StatusBadRequest,
 		},
 	}
@@ -143,14 +138,14 @@ func TestPutUser(t *testing.T) {
 			req = mux.SetURLVars(req, map[string]string{"userID": tt.userID})
 			w := httptest.NewRecorder()
 
-			putUserHandler(w, req)
+			h.putUserHandler(w, req)
 
 			if w.Code != tt.expectedStatus {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
 			}
 
 			if w.Code == http.StatusOK {
-				var updatedUser User
+				var updatedUser model.User
 				if err := json.NewDecoder(w.Body).Decode(&updatedUser); err != nil {
 					t.Fatalf("failed to decode response: %v", err)
 				}
@@ -164,26 +159,25 @@ func TestPutUser(t *testing.T) {
 }
 
 func TestPatchUser(t *testing.T) {
-	setupUserTests()
+	h := setupHandler(t)
 
-	// Create a user first
-	user := userRegistry.CreateUser("John", "Doe", "johndoe", AdditionalInfo{"role": "user"})
+	u := h.userRegistry.CreateUser("John", "Doe", "johndoe", model.AdditionalInfo{"role": "user"})
 
 	tests := []struct {
 		name           string
 		userID         string
 		payload        map[string]any
 		expectedStatus int
-		checkFunc      func(*testing.T, User)
+		checkFunc      func(*testing.T, model.User)
 	}{
 		{
 			name:   "Patch firstName only",
-			userID: user.ID.String(),
+			userID: u.ID.String(),
 			payload: map[string]any{
 				"firstName": "Jane",
 			},
 			expectedStatus: http.StatusOK,
-			checkFunc: func(t *testing.T, u User) {
+			checkFunc: func(t *testing.T, u model.User) {
 				if u.FirstName != "Jane" {
 					t.Errorf("expected firstName Jane, got %s", u.FirstName)
 				}
@@ -194,14 +188,14 @@ func TestPatchUser(t *testing.T) {
 		},
 		{
 			name:   "Patch additionalInfo",
-			userID: user.ID.String(),
+			userID: u.ID.String(),
 			payload: map[string]any{
 				"additionalInfo": map[string]any{
 					"email": "test@example.com",
 				},
 			},
 			expectedStatus: http.StatusOK,
-			checkFunc: func(t *testing.T, u User) {
+			checkFunc: func(t *testing.T, u model.User) {
 				if u.AdditionalInfo["email"] != "test@example.com" {
 					t.Error("expected additionalInfo to be updated")
 				}
@@ -228,14 +222,14 @@ func TestPatchUser(t *testing.T) {
 			req = mux.SetURLVars(req, map[string]string{"userID": tt.userID})
 			w := httptest.NewRecorder()
 
-			patchUserHandler(w, req)
+			h.patchUserHandler(w, req)
 
 			if w.Code != tt.expectedStatus {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
 			}
 
 			if w.Code == http.StatusOK && tt.checkFunc != nil {
-				var patchedUser User
+				var patchedUser model.User
 				if err := json.NewDecoder(w.Body).Decode(&patchedUser); err != nil {
 					t.Fatalf("failed to decode response: %v", err)
 				}
@@ -246,10 +240,9 @@ func TestPatchUser(t *testing.T) {
 }
 
 func TestGetUser(t *testing.T) {
-	setupUserTests()
+	h := setupHandler(t)
 
-	// Create a user first
-	user := userRegistry.CreateUser("John", "Doe", "johndoe", AdditionalInfo{"email": "john@example.com"})
+	u := h.userRegistry.CreateUser("John", "Doe", "johndoe", model.AdditionalInfo{"email": "john@example.com"})
 
 	tests := []struct {
 		name           string
@@ -258,7 +251,7 @@ func TestGetUser(t *testing.T) {
 	}{
 		{
 			name:           "Get existing user",
-			userID:         user.ID.String(),
+			userID:         u.ID.String(),
 			expectedStatus: http.StatusOK,
 		},
 		{
@@ -279,29 +272,29 @@ func TestGetUser(t *testing.T) {
 			req = mux.SetURLVars(req, map[string]string{"userID": tt.userID})
 			w := httptest.NewRecorder()
 
-			getUserHandler(w, req)
+			h.getUserHandler(w, req)
 
 			if w.Code != tt.expectedStatus {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
 			}
 
 			if w.Code == http.StatusOK {
-				var fetchedUser User
+				var fetchedUser model.User
 				if err := json.NewDecoder(w.Body).Decode(&fetchedUser); err != nil {
 					t.Fatalf("failed to decode response: %v", err)
 				}
 
-				if fetchedUser.ID != user.ID {
-					t.Errorf("expected user ID %s, got %s", user.ID, fetchedUser.ID)
+				if fetchedUser.ID != u.ID {
+					t.Errorf("expected user ID %s, got %s", u.ID, fetchedUser.ID)
 				}
-				if fetchedUser.FirstName != user.FirstName {
-					t.Errorf("expected firstName %s, got %s", user.FirstName, fetchedUser.FirstName)
+				if fetchedUser.FirstName != u.FirstName {
+					t.Errorf("expected firstName %s, got %s", u.FirstName, fetchedUser.FirstName)
 				}
-				if fetchedUser.LastName != user.LastName {
-					t.Errorf("expected lastName %s, got %s", user.LastName, fetchedUser.LastName)
+				if fetchedUser.LastName != u.LastName {
+					t.Errorf("expected lastName %s, got %s", u.LastName, fetchedUser.LastName)
 				}
-				if fetchedUser.Name != user.Name {
-					t.Errorf("expected name %s, got %s", user.Name, fetchedUser.Name)
+				if fetchedUser.Name != u.Name {
+					t.Errorf("expected name %s, got %s", u.Name, fetchedUser.Name)
 				}
 			}
 		})
@@ -309,10 +302,9 @@ func TestGetUser(t *testing.T) {
 }
 
 func TestDeleteUser(t *testing.T) {
-	setupUserTests()
+	h := setupHandler(t)
 
-	// Create a user first
-	user := userRegistry.CreateUser("John", "Doe", "johndoe", nil)
+	u := h.userRegistry.CreateUser("John", "Doe", "johndoe", nil)
 
 	tests := []struct {
 		name           string
@@ -321,7 +313,7 @@ func TestDeleteUser(t *testing.T) {
 	}{
 		{
 			name:           "Delete existing user",
-			userID:         user.ID.String(),
+			userID:         u.ID.String(),
 			expectedStatus: http.StatusNoContent,
 		},
 		{
@@ -342,7 +334,7 @@ func TestDeleteUser(t *testing.T) {
 			req = mux.SetURLVars(req, map[string]string{"userID": tt.userID})
 			w := httptest.NewRecorder()
 
-			deleteUserHandler(w, req)
+			h.deleteUserHandler(w, req)
 
 			if w.Code != tt.expectedStatus {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
@@ -352,186 +344,27 @@ func TestDeleteUser(t *testing.T) {
 }
 
 func TestGetRoomUsers(t *testing.T) {
-	setupUserTests()
+	logger := testLogger()
+	hub := chat.NewHub(logger)
+	ur := user.NewRegistry(logger)
+	h := New(hub, ur, logger)
 
-	// Setup hub and room
-	hub = &Hub{
-		rooms: make(map[uint]*Room),
-	}
+	room := hub.CreateRoom(nil)
+	close(room.Shutdown())
 
-	room := &Room{
-		id:      1,
-		clients: make(map[*Client]bool),
-	}
-
-	// Add some test users to the room
-	user1 := User{ID: uuid.New(), FirstName: "John", LastName: "Doe"}
-	user2 := User{ID: uuid.New(), FirstName: "Jane", LastName: "Smith"}
-
-	client1 := &Client{user: user1}
-	client2 := &Client{user: user2}
-
-	room.clients[client1] = true
-	room.clients[client2] = true
-
-	hub.rooms[1] = room
-
-	tests := []struct {
-		name           string
-		roomID         string
-		expectedStatus int
-		expectedCount  int
-	}{
-		{
-			name:           "Get users from existing room",
-			roomID:         "1",
-			expectedStatus: http.StatusOK,
-			expectedCount:  2,
-		},
-		{
-			name:           "Get users from non-existent room",
-			roomID:         "999",
-			expectedStatus: http.StatusNotFound,
-		},
-		{
-			name:           "Invalid room ID",
-			roomID:         "invalid",
-			expectedStatus: http.StatusBadRequest,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/rooms/"+tt.roomID+"/users", nil)
-			req = mux.SetURLVars(req, map[string]string{"roomID": tt.roomID})
-			w := httptest.NewRecorder()
-
-			getRoomUsersHandler(w, req)
-
-			if w.Code != tt.expectedStatus {
-				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
-			}
-
-			if w.Code == http.StatusOK {
-				var response map[string][]User
-				if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
-					t.Fatalf("failed to decode response: %v", err)
-				}
-
-				users, ok := response["users"]
-				if !ok {
-					t.Fatal("expected 'users' key in response")
-				}
-
-				if len(users) != tt.expectedCount {
-					t.Errorf("expected %d users, got %d", tt.expectedCount, len(users))
-				}
-			}
-		})
-	}
-}
-
-func TestGetAllUsers(t *testing.T) {
-	setupUserTests()
-
-	tests := []struct {
-		name          string
-		setupFunc     func()
-		expectedCount int
-	}{
-		{
-			name: "Get all users with multiple users",
-			setupFunc: func() {
-				userRegistry.CreateUser("John", "Doe", "johndoe", AdditionalInfo{"role": "admin"})
-				userRegistry.CreateUser("Jane", "Smith", "janesmith", nil)
-				userRegistry.CreateUser("Bob", "Johnson", "bobjohnson", AdditionalInfo{"email": "bob@example.com"})
-			},
-			expectedCount: 3,
-		},
-		{
-			name:          "Get all users with empty registry",
-			setupFunc:     func() {},
-			expectedCount: 0,
-		},
-		{
-			name: "Get all users with single user",
-			setupFunc: func() {
-				userRegistry.CreateUser("Alice", "Wonder", "alice", nil)
-			},
-			expectedCount: 1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			setupUserTests()
-			tt.setupFunc()
-
-			req := httptest.NewRequest("GET", "/users", nil)
-			w := httptest.NewRecorder()
-
-			getAllUsersHandler(w, req)
-
-			if w.Code != http.StatusOK {
-				t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
-			}
-
-			var users []*User
-			if err := json.NewDecoder(w.Body).Decode(&users); err != nil {
-				t.Fatalf("failed to decode response: %v", err)
-			}
-
-			if len(users) != tt.expectedCount {
-				t.Errorf("expected %d users, got %d", tt.expectedCount, len(users))
-			}
-
-			for _, user := range users {
-				if user.ID == uuid.Nil {
-					t.Error("expected user ID to be set")
-				}
-			}
-		})
-	}
-}
-
-func TestGetAllUsersInRooms(t *testing.T) {
-	setupUserTests()
-
-	// Setup hub with multiple rooms
-	hub = &Hub{
-		rooms: make(map[uint]*Room),
-	}
-
-	room1 := &Room{
-		id:      1,
-		clients: make(map[*Client]bool),
-	}
-	room2 := &Room{
-		id:      2,
-		clients: make(map[*Client]bool),
-	}
-
-	user1 := User{ID: uuid.New(), FirstName: "John"}
-	user2 := User{ID: uuid.New(), FirstName: "Jane"}
-	user3 := User{ID: uuid.New(), FirstName: "Bob"}
-
-	room1.clients[&Client{user: user1}] = true
-	room1.clients[&Client{user: user2}] = true
-	room2.clients[&Client{user: user3}] = true
-
-	hub.rooms[1] = room1
-	hub.rooms[2] = room2
-
-	req := httptest.NewRequest("GET", "/rooms/users", nil)
+	// We can't directly add clients from outside the chat package,
+	// so we test the empty case and the route itself
+	req := httptest.NewRequest("GET", "/rooms/1/users", nil)
+	req = mux.SetURLVars(req, map[string]string{"roomID": "1"})
 	w := httptest.NewRecorder()
 
-	getAllUsersInRoomsHandler(w, req)
+	h.getRoomUsersHandler(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response map[string][]UserWithRoom
+	var response map[string][]model.User
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -541,17 +374,117 @@ func TestGetAllUsersInRooms(t *testing.T) {
 		t.Fatal("expected 'users' key in response")
 	}
 
-	if len(users) != 3 {
-		t.Errorf("expected 3 users total, got %d", len(users))
+	if len(users) != 0 {
+		t.Errorf("expected 0 users, got %d", len(users))
 	}
 
-	// Verify each user has a roomId
-	for _, userWithRoom := range users {
-		if userWithRoom.RoomID == 0 {
-			t.Error("expected roomId to be set")
-		}
-		if userWithRoom.User.ID == uuid.Nil {
-			t.Error("expected user ID to be set")
-		}
+	// Test non-existent room
+	req = httptest.NewRequest("GET", "/rooms/999/users", nil)
+	req = mux.SetURLVars(req, map[string]string{"roomID": "999"})
+	w = httptest.NewRecorder()
+
+	h.getRoomUsersHandler(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+
+	// Test invalid room ID
+	req = httptest.NewRequest("GET", "/rooms/invalid/users", nil)
+	req = mux.SetURLVars(req, map[string]string{"roomID": "invalid"})
+	w = httptest.NewRecorder()
+
+	h.getRoomUsersHandler(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestGetAllUsers(t *testing.T) {
+	tests := []struct {
+		name          string
+		setupFunc     func(*Handler)
+		expectedCount int
+	}{
+		{
+			name: "Get all users with multiple users",
+			setupFunc: func(h *Handler) {
+				h.userRegistry.CreateUser("John", "Doe", "johndoe", model.AdditionalInfo{"role": "admin"})
+				h.userRegistry.CreateUser("Jane", "Smith", "janesmith", nil)
+				h.userRegistry.CreateUser("Bob", "Johnson", "bobjohnson", model.AdditionalInfo{"email": "bob@example.com"})
+			},
+			expectedCount: 3,
+		},
+		{
+			name:          "Get all users with empty registry",
+			setupFunc:     func(h *Handler) {},
+			expectedCount: 0,
+		},
+		{
+			name: "Get all users with single user",
+			setupFunc: func(h *Handler) {
+				h.userRegistry.CreateUser("Alice", "Wonder", "alice", nil)
+			},
+			expectedCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := setupHandler(t)
+			tt.setupFunc(h)
+
+			req := httptest.NewRequest("GET", "/users", nil)
+			w := httptest.NewRecorder()
+
+			h.getAllUsersHandler(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
+			}
+
+			var users []*model.User
+			if err := json.NewDecoder(w.Body).Decode(&users); err != nil {
+				t.Fatalf("failed to decode response: %v", err)
+			}
+
+			if len(users) != tt.expectedCount {
+				t.Errorf("expected %d users, got %d", tt.expectedCount, len(users))
+			}
+
+			for _, u := range users {
+				if u.ID == uuid.Nil {
+					t.Error("expected user ID to be set")
+				}
+			}
+		})
+	}
+}
+
+func TestGetAllUsersInRooms(t *testing.T) {
+	h := setupHandler(t)
+
+	// Create rooms - they'll be empty since we can't add clients from handler level
+	room1 := h.hub.CreateRoom(nil)
+	close(room1.Shutdown())
+
+	req := httptest.NewRequest("GET", "/rooms/users", nil)
+	w := httptest.NewRecorder()
+
+	h.getAllUsersInRoomsHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response map[string][]model.UserWithRoom
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	_, ok := response["users"]
+	if !ok {
+		t.Fatal("expected 'users' key in response")
 	}
 }

@@ -1,4 +1,4 @@
-package main
+package handler
 
 import (
 	"bytes"
@@ -7,47 +7,40 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/choffmann/chat-room/internal/model"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
 
-func setupMessageTests() *Room {
-	// Reset hub and room counter for tests
-	hub = &Hub{
-		rooms: make(map[uint]*Room),
-	}
-	roomCounter = 0
-
-	// Create a test room
-	room := hub.CreateRoom(AdditionalInfo{"name": "Test Room"})
-	close(room.shutdown) // Stop the room goroutine to prevent interference
-	return room
+func setupMessageTests(t *testing.T) *Handler {
+	t.Helper()
+	h := setupHandler(t)
+	room := h.hub.CreateRoom(model.AdditionalInfo{"name": "Test Room"})
+	close(room.Shutdown())
+	return h
 }
 
 func TestPatchMessage_OnlyMessage(t *testing.T) {
-	room := setupMessageTests()
+	h := setupMessageTests(t)
 
-	// Create a test message
-	originalMsg := OutgoingMessage{
+	room, _ := h.hub.GetRoom(1)
+	originalMsg := model.OutgoingMessage{
 		ID:          uuid.New(),
-		MessageType: UserMessage,
+		MessageType: model.UserMessage,
 		Message:     "Original message",
-		User:        User{ID: uuid.New(), Name: "Alice"},
-		AdditionalInfo: AdditionalInfo{
+		User:        model.User{ID: uuid.New(), Name: "Alice"},
+		AdditionalInfo: model.AdditionalInfo{
 			"replyTo": "msg-123",
 		},
 	}
 	room.StoreMessage(originalMsg)
 
-	// Patch only the message content
 	newContent := "Updated message"
 	success := room.PatchMessage(originalMsg.ID, &newContent, nil)
-
 	if !success {
 		t.Fatal("expected PatchMessage to return true")
 	}
 
-	// Verify the message was updated
 	updatedMsg, ok := room.GetMessage(originalMsg.ID)
 	if !ok {
 		t.Fatal("message not found after patch")
@@ -57,40 +50,36 @@ func TestPatchMessage_OnlyMessage(t *testing.T) {
 		t.Errorf("expected message to be '%s', got '%s'", newContent, updatedMsg.Message)
 	}
 
-	// Verify additionalInfo was preserved
 	if updatedMsg.AdditionalInfo["replyTo"] != "msg-123" {
 		t.Error("expected additionalInfo to be preserved")
 	}
 }
 
 func TestPatchMessage_OnlyAdditionalInfo(t *testing.T) {
-	room := setupMessageTests()
+	h := setupMessageTests(t)
 
-	// Create a test message
-	originalMsg := OutgoingMessage{
+	room, _ := h.hub.GetRoom(1)
+	originalMsg := model.OutgoingMessage{
 		ID:          uuid.New(),
-		MessageType: UserMessage,
+		MessageType: model.UserMessage,
 		Message:     "Original message",
-		User:        User{ID: uuid.New(), Name: "Alice"},
-		AdditionalInfo: AdditionalInfo{
+		User:        model.User{ID: uuid.New(), Name: "Alice"},
+		AdditionalInfo: model.AdditionalInfo{
 			"replyTo": "msg-123",
 		},
 	}
 	room.StoreMessage(originalMsg)
 
-	// Patch only the additionalInfo
-	newInfo := AdditionalInfo{
+	newInfo := model.AdditionalInfo{
 		"edited":       true,
 		"editedAt":     "2024-01-01T00:00:00Z",
 		"editedReason": "Fixed typo",
 	}
 	success := room.PatchMessage(originalMsg.ID, nil, newInfo)
-
 	if !success {
 		t.Fatal("expected PatchMessage to return true")
 	}
 
-	// Verify the additionalInfo was updated
 	updatedMsg, ok := room.GetMessage(originalMsg.ID)
 	if !ok {
 		t.Fatal("message not found after patch")
@@ -108,40 +97,36 @@ func TestPatchMessage_OnlyAdditionalInfo(t *testing.T) {
 		t.Error("expected additionalInfo editedReason to be set")
 	}
 
-	// Verify old additionalInfo was completely replaced
 	if _, exists := updatedMsg.AdditionalInfo["replyTo"]; exists {
 		t.Error("expected old additionalInfo to be replaced, not merged")
 	}
 }
 
 func TestPatchMessage_BothFields(t *testing.T) {
-	room := setupMessageTests()
+	h := setupMessageTests(t)
 
-	// Create a test message
-	originalMsg := OutgoingMessage{
+	room, _ := h.hub.GetRoom(1)
+	originalMsg := model.OutgoingMessage{
 		ID:          uuid.New(),
-		MessageType: UserMessage,
+		MessageType: model.UserMessage,
 		Message:     "Original message",
-		User:        User{ID: uuid.New(), Name: "Alice"},
-		AdditionalInfo: AdditionalInfo{
+		User:        model.User{ID: uuid.New(), Name: "Alice"},
+		AdditionalInfo: model.AdditionalInfo{
 			"replyTo": "msg-123",
 		},
 	}
 	room.StoreMessage(originalMsg)
 
-	// Patch both message and additionalInfo
 	newContent := "Updated message"
-	newInfo := AdditionalInfo{
+	newInfo := model.AdditionalInfo{
 		"edited":   true,
 		"editedAt": "2024-01-01T00:00:00Z",
 	}
 	success := room.PatchMessage(originalMsg.ID, &newContent, newInfo)
-
 	if !success {
 		t.Fatal("expected PatchMessage to return true")
 	}
 
-	// Verify both fields were updated
 	updatedMsg, ok := room.GetMessage(originalMsg.ID)
 	if !ok {
 		t.Fatal("message not found after patch")
@@ -157,34 +142,32 @@ func TestPatchMessage_BothFields(t *testing.T) {
 }
 
 func TestPatchMessage_NonExistentMessage(t *testing.T) {
-	room := setupMessageTests()
+	h := setupMessageTests(t)
 
-	// Try to patch a message that doesn't exist
+	room, _ := h.hub.GetRoom(1)
 	nonExistentID := uuid.New()
 	newContent := "Updated message"
 	success := room.PatchMessage(nonExistentID, &newContent, nil)
-
 	if success {
 		t.Error("expected PatchMessage to return false for non-existent message")
 	}
 }
 
 func TestPatchRoomMessageHandler_OnlyMessage(t *testing.T) {
-	room := setupMessageTests()
+	h := setupMessageTests(t)
 
-	// Create a test message
-	testMsg := OutgoingMessage{
+	room, _ := h.hub.GetRoom(1)
+	testMsg := model.OutgoingMessage{
 		ID:          uuid.New(),
-		MessageType: UserMessage,
+		MessageType: model.UserMessage,
 		Message:     "Original message",
-		User:        User{ID: uuid.New(), Name: "Alice"},
-		AdditionalInfo: AdditionalInfo{
+		User:        model.User{ID: uuid.New(), Name: "Alice"},
+		AdditionalInfo: model.AdditionalInfo{
 			"replyTo": "msg-123",
 		},
 	}
 	room.StoreMessage(testMsg)
 
-	// Prepare request to patch only the message
 	patchPayload := map[string]interface{}{
 		"message": "Updated via handler",
 	}
@@ -197,13 +180,13 @@ func TestPatchRoomMessageHandler_OnlyMessage(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	patchRoomMessageHandler(w, req)
+	h.patchRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response OutgoingMessage
+	var response model.OutgoingMessage
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -212,25 +195,23 @@ func TestPatchRoomMessageHandler_OnlyMessage(t *testing.T) {
 		t.Errorf("expected message to be 'Updated via handler', got '%s'", response.Message)
 	}
 
-	// Verify additionalInfo was preserved
 	if response.AdditionalInfo["replyTo"] != "msg-123" {
 		t.Error("expected additionalInfo to be preserved")
 	}
 }
 
 func TestPatchRoomMessageHandler_OnlyAdditionalInfo(t *testing.T) {
-	room := setupMessageTests()
+	h := setupMessageTests(t)
 
-	// Create a test message
-	testMsg := OutgoingMessage{
+	room, _ := h.hub.GetRoom(1)
+	testMsg := model.OutgoingMessage{
 		ID:          uuid.New(),
-		MessageType: UserMessage,
+		MessageType: model.UserMessage,
 		Message:     "Original message",
-		User:        User{ID: uuid.New(), Name: "Alice"},
+		User:        model.User{ID: uuid.New(), Name: "Alice"},
 	}
 	room.StoreMessage(testMsg)
 
-	// Prepare request to patch only the additionalInfo
 	patchPayload := map[string]interface{}{
 		"additionalInfo": map[string]interface{}{
 			"edited":   true,
@@ -246,13 +227,13 @@ func TestPatchRoomMessageHandler_OnlyAdditionalInfo(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	patchRoomMessageHandler(w, req)
+	h.patchRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response OutgoingMessage
+	var response model.OutgoingMessage
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -267,18 +248,17 @@ func TestPatchRoomMessageHandler_OnlyAdditionalInfo(t *testing.T) {
 }
 
 func TestPatchRoomMessageHandler_BothFields(t *testing.T) {
-	room := setupMessageTests()
+	h := setupMessageTests(t)
 
-	// Create a test message
-	testMsg := OutgoingMessage{
+	room, _ := h.hub.GetRoom(1)
+	testMsg := model.OutgoingMessage{
 		ID:          uuid.New(),
-		MessageType: UserMessage,
+		MessageType: model.UserMessage,
 		Message:     "Original message",
-		User:        User{ID: uuid.New(), Name: "Alice"},
+		User:        model.User{ID: uuid.New(), Name: "Alice"},
 	}
 	room.StoreMessage(testMsg)
 
-	// Prepare request to patch both fields
 	patchPayload := map[string]interface{}{
 		"message": "Updated message and info",
 		"additionalInfo": map[string]interface{}{
@@ -295,13 +275,13 @@ func TestPatchRoomMessageHandler_BothFields(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	patchRoomMessageHandler(w, req)
+	h.patchRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response OutgoingMessage
+	var response model.OutgoingMessage
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -316,18 +296,17 @@ func TestPatchRoomMessageHandler_BothFields(t *testing.T) {
 }
 
 func TestPatchRoomMessageHandler_NoFieldsProvided(t *testing.T) {
-	room := setupMessageTests()
+	h := setupMessageTests(t)
 
-	// Create a test message
-	testMsg := OutgoingMessage{
+	room, _ := h.hub.GetRoom(1)
+	testMsg := model.OutgoingMessage{
 		ID:          uuid.New(),
-		MessageType: UserMessage,
+		MessageType: model.UserMessage,
 		Message:     "Original message",
-		User:        User{ID: uuid.New(), Name: "Alice"},
+		User:        model.User{ID: uuid.New(), Name: "Alice"},
 	}
 	room.StoreMessage(testMsg)
 
-	// Prepare request with empty payload
 	patchPayload := map[string]interface{}{}
 	body, _ := json.Marshal(patchPayload)
 
@@ -338,7 +317,7 @@ func TestPatchRoomMessageHandler_NoFieldsProvided(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	patchRoomMessageHandler(w, req)
+	h.patchRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
@@ -346,18 +325,17 @@ func TestPatchRoomMessageHandler_NoFieldsProvided(t *testing.T) {
 }
 
 func TestPatchRoomMessageHandler_EmptyMessage(t *testing.T) {
-	room := setupMessageTests()
+	h := setupMessageTests(t)
 
-	// Create a test message
-	testMsg := OutgoingMessage{
+	room, _ := h.hub.GetRoom(1)
+	testMsg := model.OutgoingMessage{
 		ID:          uuid.New(),
-		MessageType: UserMessage,
+		MessageType: model.UserMessage,
 		Message:     "Original message",
-		User:        User{ID: uuid.New(), Name: "Alice"},
+		User:        model.User{ID: uuid.New(), Name: "Alice"},
 	}
 	room.StoreMessage(testMsg)
 
-	// Prepare request with empty message string
 	patchPayload := map[string]interface{}{
 		"message": "",
 	}
@@ -370,7 +348,7 @@ func TestPatchRoomMessageHandler_EmptyMessage(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	patchRoomMessageHandler(w, req)
+	h.patchRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
@@ -378,8 +356,9 @@ func TestPatchRoomMessageHandler_EmptyMessage(t *testing.T) {
 }
 
 func TestPatchRoomMessageHandler_InvalidRoomID(t *testing.T) {
-	setupMessageTests()
+	setupMessageTests(t)
 
+	h := setupHandler(t)
 	req := httptest.NewRequest("PATCH", "/rooms/invalid/messages/"+uuid.New().String(), bytes.NewBufferString("{}"))
 	req = mux.SetURLVars(req, map[string]string{
 		"roomID":    "invalid",
@@ -387,7 +366,7 @@ func TestPatchRoomMessageHandler_InvalidRoomID(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	patchRoomMessageHandler(w, req)
+	h.patchRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
@@ -395,7 +374,7 @@ func TestPatchRoomMessageHandler_InvalidRoomID(t *testing.T) {
 }
 
 func TestPatchRoomMessageHandler_InvalidMessageID(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
 	req := httptest.NewRequest("PATCH", "/rooms/1/messages/invalid", bytes.NewBufferString("{}"))
 	req = mux.SetURLVars(req, map[string]string{
@@ -404,7 +383,7 @@ func TestPatchRoomMessageHandler_InvalidMessageID(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	patchRoomMessageHandler(w, req)
+	h.patchRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
@@ -412,7 +391,7 @@ func TestPatchRoomMessageHandler_InvalidMessageID(t *testing.T) {
 }
 
 func TestPatchRoomMessageHandler_RoomNotFound(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
 	messageID := uuid.New()
 	patchPayload := map[string]interface{}{
@@ -427,7 +406,7 @@ func TestPatchRoomMessageHandler_RoomNotFound(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	patchRoomMessageHandler(w, req)
+	h.patchRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
@@ -435,7 +414,7 @@ func TestPatchRoomMessageHandler_RoomNotFound(t *testing.T) {
 }
 
 func TestPatchRoomMessageHandler_MessageNotFound(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
 	nonExistentMsgID := uuid.New()
 	patchPayload := map[string]interface{}{
@@ -450,7 +429,7 @@ func TestPatchRoomMessageHandler_MessageNotFound(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	patchRoomMessageHandler(w, req)
+	h.patchRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
@@ -458,20 +437,20 @@ func TestPatchRoomMessageHandler_MessageNotFound(t *testing.T) {
 }
 
 func TestGetRoomMessages(t *testing.T) {
-	room := setupMessageTests()
+	h := setupMessageTests(t)
 
-	// Add some test messages
-	msg1 := OutgoingMessage{
+	room, _ := h.hub.GetRoom(1)
+	msg1 := model.OutgoingMessage{
 		ID:          uuid.New(),
-		MessageType: UserMessage,
+		MessageType: model.UserMessage,
 		Message:     "First message",
-		User:        User{ID: uuid.New(), Name: "Alice"},
+		User:        model.User{ID: uuid.New(), Name: "Alice"},
 	}
-	msg2 := OutgoingMessage{
+	msg2 := model.OutgoingMessage{
 		ID:          uuid.New(),
-		MessageType: UserMessage,
+		MessageType: model.UserMessage,
 		Message:     "Second message",
-		User:        User{ID: uuid.New(), Name: "Bob"},
+		User:        model.User{ID: uuid.New(), Name: "Bob"},
 	}
 	room.StoreMessage(msg1)
 	room.StoreMessage(msg2)
@@ -480,13 +459,13 @@ func TestGetRoomMessages(t *testing.T) {
 	req = mux.SetURLVars(req, map[string]string{"roomID": "1"})
 	w := httptest.NewRecorder()
 
-	getRoomMessagesHandler(w, req)
+	h.getRoomMessagesHandler(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response map[string][]OutgoingMessage
+	var response map[string][]model.OutgoingMessage
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -502,76 +481,29 @@ func TestGetRoomMessages(t *testing.T) {
 }
 
 func TestGetRoomMessages_RoomNotFound(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
 	req := httptest.NewRequest("GET", "/rooms/999/messages", nil)
 	req = mux.SetURLVars(req, map[string]string{"roomID": "999"})
 	w := httptest.NewRecorder()
 
-	getRoomMessagesHandler(w, req)
+	h.getRoomMessagesHandler(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
 	}
 }
 
-func TestShouldStoreMessage(t *testing.T) {
-	tests := []struct {
-		name     string
-		msgType  MessageType
-		expected bool
-	}{
-		{
-			name:     "Store system messages",
-			msgType:  SystemMessage,
-			expected: true,
-		},
-		{
-			name:     "Store user messages",
-			msgType:  UserMessage,
-			expected: true,
-		},
-		{
-			name:     "Do not store image messages",
-			msgType:  ImageMessage,
-			expected: false,
-		},
-		{
-			name:     "Do not store user_typing events",
-			msgType:  "user_typing",
-			expected: false,
-		},
-		{
-			name:     "Do not store message_updated events",
-			msgType:  "message_updated",
-			expected: false,
-		},
-		{
-			name:     "Do not store custom events",
-			msgType:  "custom_event",
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := shouldStoreMessage(tt.msgType)
-			if result != tt.expected {
-				t.Errorf("shouldStoreMessage(%s) = %v, expected %v", tt.msgType, result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestGetRoomMessageHandler_Success(t *testing.T) {
-	room := setupMessageTests()
+	h := setupMessageTests(t)
 
-	testMsg := OutgoingMessage{
+	room, _ := h.hub.GetRoom(1)
+	testMsg := model.OutgoingMessage{
 		ID:          uuid.New(),
-		MessageType: UserMessage,
+		MessageType: model.UserMessage,
 		Message:     "Test message",
-		User:        User{ID: uuid.New(), Name: "Alice"},
-		AdditionalInfo: AdditionalInfo{
+		User:        model.User{ID: uuid.New(), Name: "Alice"},
+		AdditionalInfo: model.AdditionalInfo{
 			"key": "value",
 		},
 	}
@@ -584,13 +516,13 @@ func TestGetRoomMessageHandler_Success(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	getRoomMessageHandler(w, req)
+	h.getRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response OutgoingMessage
+	var response model.OutgoingMessage
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -605,7 +537,7 @@ func TestGetRoomMessageHandler_Success(t *testing.T) {
 }
 
 func TestGetRoomMessageHandler_InvalidRoomID(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
 	req := httptest.NewRequest("GET", "/rooms/invalid/messages/"+uuid.New().String(), nil)
 	req = mux.SetURLVars(req, map[string]string{
@@ -614,7 +546,7 @@ func TestGetRoomMessageHandler_InvalidRoomID(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	getRoomMessageHandler(w, req)
+	h.getRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
@@ -622,7 +554,7 @@ func TestGetRoomMessageHandler_InvalidRoomID(t *testing.T) {
 }
 
 func TestGetRoomMessageHandler_InvalidMessageID(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
 	req := httptest.NewRequest("GET", "/rooms/1/messages/invalid", nil)
 	req = mux.SetURLVars(req, map[string]string{
@@ -631,7 +563,7 @@ func TestGetRoomMessageHandler_InvalidMessageID(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	getRoomMessageHandler(w, req)
+	h.getRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
@@ -639,7 +571,7 @@ func TestGetRoomMessageHandler_InvalidMessageID(t *testing.T) {
 }
 
 func TestGetRoomMessageHandler_RoomNotFound(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
 	req := httptest.NewRequest("GET", "/rooms/999/messages/"+uuid.New().String(), nil)
 	req = mux.SetURLVars(req, map[string]string{
@@ -648,7 +580,7 @@ func TestGetRoomMessageHandler_RoomNotFound(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	getRoomMessageHandler(w, req)
+	h.getRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
@@ -656,7 +588,7 @@ func TestGetRoomMessageHandler_RoomNotFound(t *testing.T) {
 }
 
 func TestGetRoomMessageHandler_MessageNotFound(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
 	nonExistentID := uuid.New()
 	req := httptest.NewRequest("GET", "/rooms/1/messages/"+nonExistentID.String(), nil)
@@ -666,7 +598,7 @@ func TestGetRoomMessageHandler_MessageNotFound(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	getRoomMessageHandler(w, req)
+	h.getRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
@@ -674,14 +606,15 @@ func TestGetRoomMessageHandler_MessageNotFound(t *testing.T) {
 }
 
 func TestPutRoomMessageHandler_Success(t *testing.T) {
-	room := setupMessageTests()
+	h := setupMessageTests(t)
 
-	testMsg := OutgoingMessage{
+	room, _ := h.hub.GetRoom(1)
+	testMsg := model.OutgoingMessage{
 		ID:          uuid.New(),
-		MessageType: UserMessage,
+		MessageType: model.UserMessage,
 		Message:     "Original message",
-		User:        User{ID: uuid.New(), Name: "Alice"},
-		AdditionalInfo: AdditionalInfo{
+		User:        model.User{ID: uuid.New(), Name: "Alice"},
+		AdditionalInfo: model.AdditionalInfo{
 			"replyTo": "msg-123",
 		},
 	}
@@ -703,13 +636,13 @@ func TestPutRoomMessageHandler_Success(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	putRoomMessageHandler(w, req)
+	h.putRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response OutgoingMessage
+	var response model.OutgoingMessage
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -728,11 +661,9 @@ func TestPutRoomMessageHandler_Success(t *testing.T) {
 }
 
 func TestPutRoomMessageHandler_InvalidRoomID(t *testing.T) {
-	setupMessageTests()
+	h := setupHandler(t)
 
-	putPayload := map[string]interface{}{
-		"message": "Test",
-	}
+	putPayload := map[string]interface{}{"message": "Test"}
 	body, _ := json.Marshal(putPayload)
 
 	req := httptest.NewRequest("PUT", "/rooms/invalid/messages/"+uuid.New().String(), bytes.NewBuffer(body))
@@ -742,7 +673,7 @@ func TestPutRoomMessageHandler_InvalidRoomID(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	putRoomMessageHandler(w, req)
+	h.putRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
@@ -750,11 +681,9 @@ func TestPutRoomMessageHandler_InvalidRoomID(t *testing.T) {
 }
 
 func TestPutRoomMessageHandler_InvalidMessageID(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
-	putPayload := map[string]interface{}{
-		"message": "Test",
-	}
+	putPayload := map[string]interface{}{"message": "Test"}
 	body, _ := json.Marshal(putPayload)
 
 	req := httptest.NewRequest("PUT", "/rooms/1/messages/invalid", bytes.NewBuffer(body))
@@ -764,7 +693,7 @@ func TestPutRoomMessageHandler_InvalidMessageID(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	putRoomMessageHandler(w, req)
+	h.putRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
@@ -772,11 +701,9 @@ func TestPutRoomMessageHandler_InvalidMessageID(t *testing.T) {
 }
 
 func TestPutRoomMessageHandler_RoomNotFound(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
-	putPayload := map[string]interface{}{
-		"message": "Test",
-	}
+	putPayload := map[string]interface{}{"message": "Test"}
 	body, _ := json.Marshal(putPayload)
 
 	req := httptest.NewRequest("PUT", "/rooms/999/messages/"+uuid.New().String(), bytes.NewBuffer(body))
@@ -786,7 +713,7 @@ func TestPutRoomMessageHandler_RoomNotFound(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	putRoomMessageHandler(w, req)
+	h.putRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
@@ -794,12 +721,10 @@ func TestPutRoomMessageHandler_RoomNotFound(t *testing.T) {
 }
 
 func TestPutRoomMessageHandler_MessageNotFound(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
 	nonExistentID := uuid.New()
-	putPayload := map[string]interface{}{
-		"message": "Test",
-	}
+	putPayload := map[string]interface{}{"message": "Test"}
 	body, _ := json.Marshal(putPayload)
 
 	req := httptest.NewRequest("PUT", "/rooms/1/messages/"+nonExistentID.String(), bytes.NewBuffer(body))
@@ -809,7 +734,7 @@ func TestPutRoomMessageHandler_MessageNotFound(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	putRoomMessageHandler(w, req)
+	h.putRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
@@ -817,7 +742,7 @@ func TestPutRoomMessageHandler_MessageNotFound(t *testing.T) {
 }
 
 func TestPutRoomMessageHandler_InvalidJSON(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
 	req := httptest.NewRequest("PUT", "/rooms/1/messages/"+uuid.New().String(), bytes.NewBufferString("{invalid json"))
 	req = mux.SetURLVars(req, map[string]string{
@@ -826,7 +751,7 @@ func TestPutRoomMessageHandler_InvalidJSON(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	putRoomMessageHandler(w, req)
+	h.putRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
@@ -834,13 +759,14 @@ func TestPutRoomMessageHandler_InvalidJSON(t *testing.T) {
 }
 
 func TestDeleteRoomMessageHandler_Success(t *testing.T) {
-	room := setupMessageTests()
+	h := setupMessageTests(t)
 
-	testMsg := OutgoingMessage{
+	room, _ := h.hub.GetRoom(1)
+	testMsg := model.OutgoingMessage{
 		ID:          uuid.New(),
-		MessageType: UserMessage,
+		MessageType: model.UserMessage,
 		Message:     "Message to delete",
-		User:        User{ID: uuid.New(), Name: "Alice"},
+		User:        model.User{ID: uuid.New(), Name: "Alice"},
 	}
 	room.StoreMessage(testMsg)
 
@@ -851,13 +777,13 @@ func TestDeleteRoomMessageHandler_Success(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	deleteRoomMessageHandler(w, req)
+	h.deleteRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var response OutgoingMessage
+	var response model.OutgoingMessage
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -872,7 +798,7 @@ func TestDeleteRoomMessageHandler_Success(t *testing.T) {
 }
 
 func TestDeleteRoomMessageHandler_InvalidRoomID(t *testing.T) {
-	setupMessageTests()
+	h := setupHandler(t)
 
 	req := httptest.NewRequest("DELETE", "/rooms/invalid/messages/"+uuid.New().String(), nil)
 	req = mux.SetURLVars(req, map[string]string{
@@ -881,7 +807,7 @@ func TestDeleteRoomMessageHandler_InvalidRoomID(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	deleteRoomMessageHandler(w, req)
+	h.deleteRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
@@ -889,7 +815,7 @@ func TestDeleteRoomMessageHandler_InvalidRoomID(t *testing.T) {
 }
 
 func TestDeleteRoomMessageHandler_InvalidMessageID(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
 	req := httptest.NewRequest("DELETE", "/rooms/1/messages/invalid", nil)
 	req = mux.SetURLVars(req, map[string]string{
@@ -898,7 +824,7 @@ func TestDeleteRoomMessageHandler_InvalidMessageID(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	deleteRoomMessageHandler(w, req)
+	h.deleteRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
@@ -906,7 +832,7 @@ func TestDeleteRoomMessageHandler_InvalidMessageID(t *testing.T) {
 }
 
 func TestDeleteRoomMessageHandler_RoomNotFound(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
 	req := httptest.NewRequest("DELETE", "/rooms/999/messages/"+uuid.New().String(), nil)
 	req = mux.SetURLVars(req, map[string]string{
@@ -915,7 +841,7 @@ func TestDeleteRoomMessageHandler_RoomNotFound(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	deleteRoomMessageHandler(w, req)
+	h.deleteRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
@@ -923,7 +849,7 @@ func TestDeleteRoomMessageHandler_RoomNotFound(t *testing.T) {
 }
 
 func TestDeleteRoomMessageHandler_MessageNotFound(t *testing.T) {
-	setupMessageTests()
+	h := setupMessageTests(t)
 
 	nonExistentID := uuid.New()
 	req := httptest.NewRequest("DELETE", "/rooms/1/messages/"+nonExistentID.String(), nil)
@@ -933,7 +859,7 @@ func TestDeleteRoomMessageHandler_MessageNotFound(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	deleteRoomMessageHandler(w, req)
+	h.deleteRoomMessageHandler(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)

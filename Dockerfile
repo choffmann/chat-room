@@ -23,11 +23,12 @@ ARG APP_BUILD_TIME="unknown"
 RUN go build -o "bin/chat-room" \
     -ldflags=" \
       -s -w \
-      -X main.version=${APP_VERSION} \
-      -X main.gitCommit=${APP_GIT_COMMIT} \
-      -X main.gitRepository=${APP_GIT_REPOSITORY} \
-      -X main.buildTime=${APP_BUILD_TIME} \
-    "
+      -X github.com/choffmann/chat-room/internal/config.Version=${APP_VERSION} \
+      -X github.com/choffmann/chat-room/internal/config.GitCommit=${APP_GIT_COMMIT} \
+      -X github.com/choffmann/chat-room/internal/config.GitRepository=${APP_GIT_REPOSITORY} \
+      -X github.com/choffmann/chat-room/internal/config.BuildTime=${APP_BUILD_TIME} \
+    " \
+    ./cmd/chat-room
 
 #############################################
 # Runner go

@@ -1,26 +1,26 @@
-package main
+package chat
 
 import (
 	"context"
-	"sort"
+	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/choffmann/chat-room/internal/model"
 	"github.com/google/uuid"
 )
 
 const (
-	roomTimeout         = 3 * time.Hour
-	roomTimeoutInterval = 25 * time.Second
+	RoomTimeout         = 3 * time.Hour
+	RoomTimeoutInterval = 25 * time.Second
 )
 
-type Hub struct {
-	mu    sync.RWMutex
-	rooms map[uint]*Room
-}
+// timeNow is a variable for testing purposes
+var timeNow = time.Now
 
 type Room struct {
 	id             uint
+	hub            *Hub
 	clientsMu      sync.RWMutex
 	clients        map[*Client]bool
 	broadcast      chan []byte
@@ -31,89 +31,18 @@ type Room struct {
 	shutdownOnce   sync.Once
 	activityMu     sync.RWMutex
 	lastActivity   time.Time
-	additionalInfo AdditionalInfo
+	additionalInfo model.AdditionalInfo
 	messagesMu     sync.RWMutex
-	messages       []OutgoingMessage
+	messages       []model.OutgoingMessage
+	logger         *slog.Logger
 }
 
-func newRoomID() uint {
-	roomMu.Lock()
-	defer roomMu.Unlock()
-	roomCounter++
-	return uint(roomCounter)
-}
+func (r *Room) ID() uint                { return r.id }
+func (r *Room) Shutdown() chan struct{} { return r.shutdown }
+func (r *Room) Closed() chan struct{}   { return r.closed }
 
-func (h *Hub) CreateRoom(additionalInfo AdditionalInfo) *Room {
-	id := newRoomID()
-	room := &Room{
-		id:             id,
-		clients:        make(map[*Client]bool),
-		broadcast:      make(chan []byte),
-		register:       make(chan *Client),
-		unregister:     make(chan *Client),
-		closed:         make(chan struct{}),
-		shutdown:       make(chan struct{}),
-		lastActivity:   time.Now(),
-		additionalInfo: additionalInfo,
-		messages:       make([]OutgoingMessage, 0),
-	}
-
-	logger.Info("creating new room", "roomID", id)
-	h.mu.Lock()
-	h.rooms[id] = room
-	h.mu.Unlock()
-
-	go room.run()
-	return room
-}
-
-func (h *Hub) GetRoom(id uint) (*Room, bool) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	r, ok := h.rooms[id]
-	return r, ok
-}
-
-func (h *Hub) GetAllRoomIDs() []RoomResponse {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	rooms := make([]RoomResponse, 0, len(h.rooms))
-	for _, room := range h.rooms {
-		rooms = append(rooms, RoomResponse{
-			ID:             room.id,
-			AdditionalInfo: room.additionalInfo,
-			UserCount:      room.GetClientCount(),
-		})
-	}
-
-	sort.Slice(rooms, func(i, j int) bool {
-		return rooms[i].ID < rooms[j].ID
-	})
-	return rooms
-}
-
-func (h *Hub) DeleteRoom(id uint) {
-	logger.Info("deleting room", "roomID", id)
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	delete(h.rooms, id)
-}
-
-func (h *Hub) GetAllUsersWithRooms() []UserWithRoom {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	usersWithRooms := make([]UserWithRoom, 0)
-	for roomID, room := range h.rooms {
-		users := room.GetUsers()
-		for _, user := range users {
-			usersWithRooms = append(usersWithRooms, UserWithRoom{
-				User:   user,
-				RoomID: roomID,
-			})
-		}
-	}
-	return usersWithRooms
+func (r *Room) ShutdownOnce(f func()) {
+	r.shutdownOnce.Do(f)
 }
 
 func (r *Room) UpdateActivityNow() {
@@ -122,39 +51,38 @@ func (r *Room) UpdateActivityNow() {
 	r.lastActivity = time.Now()
 }
 
-func (r *Room) UpdateAdditionalInfo(newInfo AdditionalInfo) {
+func (r *Room) UpdateAdditionalInfo(newInfo model.AdditionalInfo) {
 	r.activityMu.Lock()
 	defer r.activityMu.Unlock()
 	r.additionalInfo = newInfo
 }
 
-func (r *Room) PatchAdditionalInfo(updates AdditionalInfo) {
+func (r *Room) PatchAdditionalInfo(updates model.AdditionalInfo) {
 	r.activityMu.Lock()
 	defer r.activityMu.Unlock()
 	if r.additionalInfo == nil {
-		r.additionalInfo = make(AdditionalInfo)
+		r.additionalInfo = make(model.AdditionalInfo)
 	}
 	for key, value := range updates {
 		r.additionalInfo[key] = value
 	}
 }
 
-func (r *Room) GetAdditionalInfo() AdditionalInfo {
+func (r *Room) GetAdditionalInfo() model.AdditionalInfo {
 	r.activityMu.RLock()
 	defer r.activityMu.RUnlock()
-	// Return a copy to prevent external modification
-	info := make(AdditionalInfo, len(r.additionalInfo))
+	info := make(model.AdditionalInfo, len(r.additionalInfo))
 	for k, v := range r.additionalInfo {
 		info[k] = v
 	}
 	return info
 }
 
-func (r *Room) disconnectAllClients() {
+func (r *Room) DisconnectAllClients() {
 	r.clientsMu.Lock()
 	defer r.clientsMu.Unlock()
 	for c := range r.clients {
-		c.closeSend()
+		c.CloseSend()
 	}
 }
 
@@ -164,18 +92,18 @@ func (r *Room) GetClientCount() int {
 	return len(r.clients)
 }
 
-func (r *Room) GetUsers() []User {
+func (r *Room) GetUsers() []model.User {
 	r.clientsMu.RLock()
 	defer r.clientsMu.RUnlock()
 
-	users := make([]User, 0, len(r.clients))
+	users := make([]model.User, 0, len(r.clients))
 	for client := range r.clients {
 		users = append(users, client.user)
 	}
 	return users
 }
 
-func (r *Room) tryBroadcast(msg []byte) bool {
+func (r *Room) TryBroadcast(msg []byte) bool {
 	select {
 	case r.broadcast <- msg:
 		return true
@@ -184,7 +112,7 @@ func (r *Room) tryBroadcast(msg []byte) bool {
 	}
 }
 
-func (r *Room) tryRegister(c *Client) bool {
+func (r *Room) TryRegister(c *Client) bool {
 	select {
 	case r.register <- c:
 		return true
@@ -193,7 +121,7 @@ func (r *Room) tryRegister(c *Client) bool {
 	}
 }
 
-func (r *Room) tryUnregister(c *Client) bool {
+func (r *Room) TryUnregister(c *Client) bool {
 	select {
 	case r.unregister <- c:
 		return true
@@ -202,7 +130,7 @@ func (r *Room) tryUnregister(c *Client) bool {
 	}
 }
 
-func (r *Room) run() {
+func (r *Room) Run() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer func() {
 		close(r.closed)
@@ -214,7 +142,7 @@ func (r *Room) run() {
 	for {
 		select {
 		case <-r.shutdown:
-			logger.Info("room shutdown signal received", "roomID", r.id)
+			r.logger.Info("room shutdown signal received", "roomID", r.id)
 			return
 
 		case c := <-r.register:
@@ -227,21 +155,19 @@ func (r *Room) run() {
 			r.clientsMu.Lock()
 			if _, ok := r.clients[c]; ok {
 				delete(r.clients, c)
-				c.closeSend()
+				c.CloseSend()
 			}
 			r.clientsMu.Unlock()
 
 		case msg := <-r.broadcast:
 			r.UpdateActivityNow()
 			r.clientsMu.RLock()
-			// Create a snapshot of clients to avoid holding lock during send
 			clientsList := make([]*Client, 0, len(r.clients))
 			for c := range r.clients {
 				clientsList = append(clientsList, c)
 			}
 			r.clientsMu.RUnlock()
 
-			// Now send to all clients
 			failedClients := make([]*Client, 0)
 			for _, c := range clientsList {
 				select {
@@ -251,12 +177,11 @@ func (r *Room) run() {
 				}
 			}
 
-			// Remove failed clients
 			if len(failedClients) > 0 {
 				r.clientsMu.Lock()
 				for _, c := range failedClients {
 					delete(r.clients, c)
-					c.closeSend()
+					c.CloseSend()
 				}
 				r.clientsMu.Unlock()
 			}
@@ -265,7 +190,7 @@ func (r *Room) run() {
 }
 
 func (r *Room) deleteRoomWithNoActivity(ctx context.Context) {
-	ticker := time.NewTicker(roomTimeoutInterval)
+	ticker := time.NewTicker(RoomTimeoutInterval)
 	defer ticker.Stop()
 
 	for {
@@ -275,41 +200,41 @@ func (r *Room) deleteRoomWithNoActivity(ctx context.Context) {
 			timeSinceActivity := time.Since(r.lastActivity)
 			r.activityMu.RUnlock()
 
-			if timeSinceActivity > roomTimeout {
+			if timeSinceActivity > RoomTimeout {
 				r.shutdownOnce.Do(func() {
 					close(r.shutdown)
 				})
-				r.disconnectAllClients()
-				hub.DeleteRoom(r.id)
-				logger.Info("remove room due to timeout activity", "roomID", r.id)
+				r.DisconnectAllClients()
+				r.hub.DeleteRoom(r.id)
+				r.logger.Info("remove room due to timeout activity", "roomID", r.id)
 				return
 			}
 
 		case <-ctx.Done():
-			logger.Debug("stopping delete room scheduler")
+			r.logger.Debug("stopping delete room scheduler")
 			return
 		}
 	}
 }
 
-func (r *Room) StoreMessage(msg OutgoingMessage) {
+func (r *Room) StoreMessage(msg model.OutgoingMessage) {
 	r.messagesMu.Lock()
 	defer r.messagesMu.Unlock()
 	if msg.AdditionalInfo == nil {
-		msg.AdditionalInfo = make(AdditionalInfo)
+		msg.AdditionalInfo = make(model.AdditionalInfo)
 	}
 	r.messages = append(r.messages, msg)
 }
 
-func (r *Room) GetMessages() []OutgoingMessage {
+func (r *Room) GetMessages() []model.OutgoingMessage {
 	r.messagesMu.RLock()
 	defer r.messagesMu.RUnlock()
-	messages := make([]OutgoingMessage, len(r.messages))
+	messages := make([]model.OutgoingMessage, len(r.messages))
 	copy(messages, r.messages)
 	return messages
 }
 
-func (r *Room) GetMessage(messageID uuid.UUID) (*OutgoingMessage, bool) {
+func (r *Room) GetMessage(messageID uuid.UUID) (*model.OutgoingMessage, bool) {
 	r.messagesMu.RLock()
 	defer r.messagesMu.RUnlock()
 	for _, msg := range r.messages {
@@ -320,12 +245,12 @@ func (r *Room) GetMessage(messageID uuid.UUID) (*OutgoingMessage, bool) {
 	return nil, false
 }
 
-func (r *Room) UpdateMessage(messageID uuid.UUID, newContent string, newAdditionalInfo AdditionalInfo) bool {
+func (r *Room) UpdateMessage(messageID uuid.UUID, newContent string, newAdditionalInfo model.AdditionalInfo) bool {
 	r.messagesMu.Lock()
 	defer r.messagesMu.Unlock()
 	for i := range r.messages {
 		if r.messages[i].ID == messageID {
-			if r.messages[i].MessageType == SystemMessage {
+			if r.messages[i].MessageType == model.SystemMessage {
 				return false
 			}
 
@@ -341,12 +266,12 @@ func (r *Room) UpdateMessage(messageID uuid.UUID, newContent string, newAddition
 	return false
 }
 
-func (r *Room) PatchMessage(messageID uuid.UUID, newContent *string, newAdditionalInfo AdditionalInfo) bool {
+func (r *Room) PatchMessage(messageID uuid.UUID, newContent *string, newAdditionalInfo model.AdditionalInfo) bool {
 	r.messagesMu.Lock()
 	defer r.messagesMu.Unlock()
 	for i := range r.messages {
 		if r.messages[i].ID == messageID {
-			if r.messages[i].MessageType == SystemMessage {
+			if r.messages[i].MessageType == model.SystemMessage {
 				return false
 			}
 			if newContent != nil {
