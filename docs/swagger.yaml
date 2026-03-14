@@ -264,8 +264,8 @@ paths:
         Upgrades the HTTP connection to WebSocket and joins the requested room.
 
         **Authentication options:**
-        - `userId` (UUID): Join as a registered user from the registry. Takes precedence over `user`.
-        - `user` (string): Join as an ephemeral user with the given display name.
+        - `userId` (UUID): Join as a registered user from the registry. Takes precedence over `userName`.
+        - `userName` (string): Join as an ephemeral user with the given display name.
         - Neither: Server assigns a random display name.
 
         **User info extraction:** Set `userInfo=true` to receive a self-join message with a `self` flag, allowing clients to extract their user information.
@@ -285,7 +285,7 @@ paths:
         type: string
       - description: Ephemeral display name
         in: query
-        name: user
+        name: userName
         type: string
       - description: Enable self-join message with user info
         in: query

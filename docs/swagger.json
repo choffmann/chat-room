@@ -51,7 +51,7 @@
         },
         "/join/{roomID}": {
             "get": {
-                "description": "Upgrades the HTTP connection to WebSocket and joins the requested room.\n\n**Authentication options:**\n- `userId` (UUID): Join as a registered user from the registry. Takes precedence over `user`.\n- `user` (string): Join as an ephemeral user with the given display name.\n- Neither: Server assigns a random display name.\n\n**User info extraction:** Set `userInfo=true` to receive a self-join message with a `self` flag, allowing clients to extract their user information.\n\n**Message types:** The `type` field in client messages accepts any string value. Built-in types are `\"message\"` and `\"image\"`, but clients can send custom types (e.g. `\"poll\"`, `\"reaction\"`, `\"file\"`). If the `type` field is omitted, it defaults to `\"message\"`. All message types are stored in room history except `\"image\"`. System messages (`\"system\"`) are server-generated and cannot be sent by clients.\n\n**Connection management:** Server sends ping every 30s, expects pong within 60s. Max message size: 10 MiB.",
+                "description": "Upgrades the HTTP connection to WebSocket and joins the requested room.\n\n**Authentication options:**\n- `userId` (UUID): Join as a registered user from the registry. Takes precedence over `userName`.\n- `userName` (string): Join as an ephemeral user with the given display name.\n- Neither: Server assigns a random display name.\n\n**User info extraction:** Set `userInfo=true` to receive a self-join message with a `self` flag, allowing clients to extract their user information.\n\n**Message types:** The `type` field in client messages accepts any string value. Built-in types are `\"message\"` and `\"image\"`, but clients can send custom types (e.g. `\"poll\"`, `\"reaction\"`, `\"file\"`). If the `type` field is omitted, it defaults to `\"message\"`. All message types are stored in room history except `\"image\"`. System messages (`\"system\"`) are server-generated and cannot be sent by clients.\n\n**Connection management:** Server sends ping every 30s, expects pong within 60s. Max message size: 10 MiB.",
                 "tags": [
                     "websocket"
                 ],
@@ -73,7 +73,7 @@
                     {
                         "type": "string",
                         "description": "Ephemeral display name",
-                        "name": "user",
+                        "name": "userName",
                         "in": "query"
                     },
                     {

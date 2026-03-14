@@ -21,8 +21,8 @@ import (
 // @Description  Upgrades the HTTP connection to WebSocket and joins the requested room.
 // @Description
 // @Description  **Authentication options:**
-// @Description  - `userId` (UUID): Join as a registered user from the registry. Takes precedence over `user`.
-// @Description  - `user` (string): Join as an ephemeral user with the given display name.
+// @Description  - `userId` (UUID): Join as a registered user from the registry. Takes precedence over `userName`.
+// @Description  - `userName` (string): Join as an ephemeral user with the given display name.
 // @Description  - Neither: Server assigns a random display name.
 // @Description
 // @Description  **User info extraction:** Set `userInfo=true` to receive a self-join message with a `self` flag, allowing clients to extract their user information.
@@ -33,7 +33,7 @@ import (
 // @Tags         websocket
 // @Param        roomID    path   int     true   "Room ID"
 // @Param        userId    query  string  false  "Registered user UUID"
-// @Param        user      query  string  false  "Ephemeral display name"
+// @Param        userName  query  string  false  "Ephemeral display name"
 // @Param        userInfo  query  bool    false  "Enable self-join message with user info"
 // @Success      101       "Switching Protocols - WebSocket connection established"
 // @Failure      400       {string}  string  "invalid room or user ID"
@@ -68,7 +68,10 @@ func (h *Handler) wsHandler(w http.ResponseWriter, r *http.Request) {
 		user = *registeredUser
 		h.logger.Info("user from registry joining room", "userID", user.ID, "roomID", roomID)
 	} else {
-		userName := r.URL.Query().Get("user")
+		userName := r.URL.Query().Get("userName")
+		if userName == "" {
+			userName = r.URL.Query().Get("user")
+		}
 		if userName == "" {
 			userName = h.defaultNames[rand.Intn(len(h.defaultNames))]
 		}

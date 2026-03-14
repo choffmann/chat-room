@@ -41,7 +41,7 @@ All endpoints are under `/api/v1`. Full request/response documentation is availa
 | **Messages** | `GET /rooms/{id}/messages`, `GET/PATCH/PUT/DELETE /rooms/{id}/messages/{msgID}` |
 | **Users** | `POST /users`, `GET /users`, `GET/PUT/PATCH/DELETE /users/{id}` |
 | **Room Users** | `GET /rooms/{id}/users`, `GET /rooms/users` |
-| **WebSocket** | `GET /join/{id}?userId=<uuid>` or `?user=<name>` |
+| **WebSocket** | `GET /join/{id}?userId=<uuid>` or `?userName=<name>` |
 | **System** | `GET /info`, `GET /healthz` |
 
 ## WebSocket
@@ -49,7 +49,7 @@ All endpoints are under `/api/v1`. Full request/response documentation is availa
 Connect via `GET /api/v1/join/{roomID}` to join a room. Query parameters:
 
 - `userId=<uuid>` - Join as a registered user
-- `user=<name>` - Join as an ephemeral user (random name if omitted)
+- `userName=<name>` - Join as an ephemeral user (random name if omitted)
 - `userInfo=true` - Receive a self-addressed join message containing assigned user info
 
 ### Message Format
