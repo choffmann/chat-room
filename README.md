@@ -33,6 +33,8 @@ docker run -p 8080:8080 chat-room
 
 All endpoints are under `/api/v1`. Full request/response documentation is available via the **Swagger UI** at `/api/v1/swagger/`.
 
+> **Note:** The server does not implement authentication or authorization. All endpoints and WebSocket connections are publicly accessible. This is by design — the server focuses on ephemeral, lightweight communication. Rooms are short-lived (auto-deleted after 3 hours of inactivity), and no sensitive data is persisted.
+
 | Area | Endpoints |
 |---|---|
 | **Rooms** | `POST /rooms`, `GET /rooms`, `GET /rooms/{id}`, `PATCH /rooms/{id}`, `PUT /rooms/{id}` |
@@ -158,7 +160,7 @@ Most entities (rooms, messages, users) support an `additionalInfo` field. This i
 | Entity | Example use cases |
 |---|---|
 | **Room** | `{"title": "Lecture 5", "topic": "REST APIs", "courseId": 42}` |
-| **Message** | `{"replyTo": "<msgID>", "edited": true, "reactions": {"thumbsUp": 3}}` |
+| **Message** | `{"replyTo": "<msgID>", "reactions": {"thumbsUp": 3}}` |
 | **User** | `{"avatar": "https://...", "role": "student", "semester": 5}` |
 
 The server will set certain keys automatically in specific situations:
