@@ -44,4 +44,6 @@ WORKDIR /app
 
 COPY --chown=gorunner:gorunner --from=builder /app/build/bin/chat-room /app/chat-room
 
+RUN mkdir -p /app/uploads
+
 ENTRYPOINT [ "/app/chat-room" ]

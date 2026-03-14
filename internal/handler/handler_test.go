@@ -21,7 +21,7 @@ func setupHandler(t *testing.T) *Handler {
 	logger := testLogger()
 	h := chat.NewHub(logger)
 	ur := user.NewRegistry(logger)
-	return New(h, ur, logger)
+	return New(h, ur, logger, nil)
 }
 
 func TestRegisterRoutes_VersionedPrefix(t *testing.T) {

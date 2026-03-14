@@ -147,6 +147,39 @@ func TestHubGetAllUsersWithRooms(t *testing.T) {
 	}
 }
 
+func TestHubShutdownAll(t *testing.T) {
+	h := NewHub(testLogger())
+
+	rooms := make([]*Room, 3)
+	for i := range rooms {
+		rooms[i] = h.CreateRoom(nil)
+	}
+
+	var deletedIDs []uint
+	h.SetOnRoomDelete(func(roomID uint) {
+		deletedIDs = append(deletedIDs, roomID)
+	})
+
+	h.ShutdownAll()
+
+	if len(deletedIDs) != 3 {
+		t.Errorf("expected 3 rooms deleted via callback, got %d", len(deletedIDs))
+	}
+
+	for _, room := range rooms {
+		select {
+		case <-room.Closed():
+		default:
+			t.Errorf("room %d should be closed", room.ID())
+		}
+	}
+
+	allRooms := h.GetAllRoomIDs()
+	if len(allRooms) != 0 {
+		t.Errorf("expected 0 rooms after ShutdownAll, got %d", len(allRooms))
+	}
+}
+
 func TestMessageTypeValidation(t *testing.T) {
 	validTypes := []model.MessageType{model.SystemMessage, "message", "image", "poll", "custom_event"}
 

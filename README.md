@@ -25,8 +25,9 @@ docker run -p 8080:8080 chat-room
 |---|---|---|
 | `LOG_LEVEL` | Logging level (`debug`, `info`, `warn`, `error`) | `info` |
 | `LOG_FORMAT` | Log format (`text`, `json`) | `text` |
-| `BASE_URL` | Host for Swagger UI (e.g. `example.com:8080`) | _(auto)_ |
+| `BASE_URL` | Host for Swagger UI and upload URLs (e.g. `example.com:8080`) | _(auto)_ |
 | `LEGACY_ROUTES` | Enable unversioned legacy routes | `true` |
+| `UPLOAD_DIR` | Directory for binary file uploads | `./uploads` |
 
 ## API Overview
 
@@ -104,6 +105,38 @@ The server wraps the message with a unique ID, timestamp, and user info, then br
 }
 ```
 
+### Binary File Upload
+
+Clients can send binary WebSocket frames to upload files directly. The server saves the file, detects its MIME type, and broadcasts a JSON message with the download URL to all room participants.
+
+- **Max upload size:** 5 MiB
+- **Supported types:** Images (`.jpg`, `.png`, `.gif`, `.webp`, `.svg`), documents (`.pdf`), archives (`.zip`, `.gz`), audio (`.mp3`, `.ogg`), video (`.mp4`, `.webm`), and generic binary (`.bin` fallback)
+- **Download URL:** Files are served at `/uploads/{roomID}/{uuid}.{ext}`
+
+**Server -> Client (broadcast on upload):**
+
+```json
+{
+  "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "type": "image",
+  "message": "http://localhost:8080/uploads/1/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png",
+  "timestamp": "2024-04-09T12:35:10.123456789Z",
+  "user": {
+    "id": "9a6e58a5-4d47-4c86-8b3f-9ea373cbdb0c",
+    "name": "Alice"
+  },
+  "additionalInfo": {
+    "contentType": "image/png",
+    "size": 204800,
+    "fileName": "a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+  }
+}
+```
+
+The `type` is `"image"` for image files and `"file"` for all other types. On errors (uploads disabled, file too large, empty payload, disk error), the server sends an error message only to the sending client with `"error": true` in `additionalInfo`.
+
+Upload files are automatically cleaned up when a room is deleted or the server shuts down.
+
 ### Message Types
 
 The `type` field accepts any string value, allowing clients to define custom message types without server-side changes. If omitted, the type defaults to `"message"`.
@@ -112,8 +145,9 @@ The `type` field accepts any string value, allowing clients to define custom mes
 |---|---|---|
 | `system` | Yes (< 2 MiB) | Join/leave notifications (server-generated, not sendable by clients) |
 | `message` | Yes (< 2 MiB) | Text messages (default if `type` is omitted) |
-| `image` | No | Base64-encoded images, broadcast only |
-| _custom_ | Yes (< 2 MiB) | Any other string (e.g. `"poll"`, `"reaction"`, `"file"`) |
+| `image` | Yes | Image uploads via binary WebSocket frames |
+| `file` | Yes (< 2 MiB) | Non-image binary uploads |
+| _custom_ | Yes (< 2 MiB) | Any other string (e.g. `"poll"`, `"reaction"`) |
 
 ## `additionalInfo`
 
@@ -146,7 +180,7 @@ On `PATCH` requests, `additionalInfo` is **merged** with existing data. On `PUT`
 2. **Active** while clients join or messages are sent
 3. **Deleted** after 3 hours of inactivity (no joins or messages)
 
-On shutdown, all clients are disconnected and room data is discarded.
+On room deletion, uploaded files for that room are removed. On server shutdown, all clients are disconnected and all uploads are cleaned up.
 
 ## Build with Version Info
 

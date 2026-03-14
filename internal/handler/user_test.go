@@ -347,7 +347,7 @@ func TestGetRoomUsers(t *testing.T) {
 	logger := testLogger()
 	hub := chat.NewHub(logger)
 	ur := user.NewRegistry(logger)
-	h := New(hub, ur, logger)
+	h := New(hub, ur, logger, nil)
 
 	room := hub.CreateRoom(nil)
 	close(room.Shutdown())

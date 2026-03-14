@@ -6,6 +6,7 @@ import (
 
 	"github.com/choffmann/chat-room/internal/chat"
 	"github.com/choffmann/chat-room/internal/model"
+	"github.com/choffmann/chat-room/internal/upload"
 	"github.com/choffmann/chat-room/internal/user"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -19,13 +20,15 @@ type Handler struct {
 	upgrader     websocket.Upgrader
 	systemUser   model.User
 	defaultNames []string
+	uploadStore  *upload.Store
 	logger       *slog.Logger
 }
 
-func New(hub *chat.Hub, userRegistry *user.Registry, logger *slog.Logger) *Handler {
+func New(hub *chat.Hub, userRegistry *user.Registry, logger *slog.Logger, uploadStore *upload.Store) *Handler {
 	return &Handler{
 		hub:          hub,
 		userRegistry: userRegistry,
+		uploadStore:  uploadStore,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -78,6 +81,11 @@ func (h *Handler) RegisterRoutes(r *mux.Router, legacyRoutes bool) {
 	v1.PathPrefix("/swagger/").Handler(httpSwagger.Handler(
 		httpSwagger.URL("/api/v1/swagger/doc.json"),
 	))
+
+	if h.uploadStore != nil {
+		fs := http.FileServer(http.Dir(h.uploadStore.BaseDir()))
+		r.PathPrefix("/uploads/").Handler(http.StripPrefix("/uploads/", fs))
+	}
 
 	if legacyRoutes {
 		h.registerV1Routes(r)

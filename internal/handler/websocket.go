@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/choffmann/chat-room/internal/chat"
+	"github.com/choffmann/chat-room/internal/config"
 	"github.com/choffmann/chat-room/internal/model"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -92,7 +93,13 @@ func (h *Handler) wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := chat.NewClient(room, conn, user, h.systemUser, h.logger)
+	var us chat.UploadStore
+	var uploadBaseURL string
+	if h.uploadStore != nil {
+		us = h.uploadStore
+		uploadBaseURL = resolveUploadBaseURL(r)
+	}
+	client := chat.NewClient(room, conn, user, h.systemUser, h.logger, us, uploadBaseURL)
 
 	displayName := model.GetDisplayName(user)
 	timestamp := time.Now()
@@ -149,4 +156,20 @@ func (h *Handler) wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	go client.WritePump()
 	client.ReadPump()
+}
+
+func resolveUploadBaseURL(r *http.Request) string {
+	if base := config.BaseURL(); base != "" {
+		return "http://" + base + "/uploads"
+	}
+
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if fwd := r.Header.Get("X-Forwarded-Proto"); fwd != "" {
+		scheme = fwd
+	}
+
+	return scheme + "://" + r.Host + "/uploads"
 }

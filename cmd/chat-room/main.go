@@ -3,15 +3,19 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/choffmann/chat-room/docs"
 	"github.com/choffmann/chat-room/internal/chat"
 	"github.com/choffmann/chat-room/internal/config"
 	"github.com/choffmann/chat-room/internal/handler"
+	"github.com/choffmann/chat-room/internal/upload"
 	"github.com/choffmann/chat-room/internal/user"
 	"github.com/gorilla/mux"
 )
@@ -38,10 +42,18 @@ func main() {
 
 	logger := config.NewLogger()
 
+	uploadStore := upload.NewStore(config.UploadDir(), logger)
+
 	hub := chat.NewHub(logger)
+	hub.SetOnRoomDelete(func(roomID uint) {
+		if err := uploadStore.DeleteRoomDir(roomID); err != nil {
+			logger.Warn("failed to delete room upload dir", "roomID", roomID, "error", err)
+		}
+	})
+
 	userRegistry := user.NewRegistry(logger)
 
-	h := handler.New(hub, userRegistry, logger)
+	h := handler.New(hub, userRegistry, logger, uploadStore)
 
 	r := mux.NewRouter()
 	h.RegisterRoutes(r, config.LegacyRoutes())
@@ -56,10 +68,31 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	logger.Info("server listening", "addr", srv.Addr)
+	go func() {
+		logger.Info("server listening", "addr", srv.Addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("server stopped unexpectedly", "error", err)
+			os.Exit(1)
+		}
+	}()
 
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		logger.Error("server stopped unexpectedly", "error", err)
-		os.Exit(1)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-quit
+	logger.Info("shutdown signal received", "signal", sig)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Error("http server shutdown error", "error", err)
 	}
+
+	hub.ShutdownAll()
+
+	if err := uploadStore.DeleteAll(); err != nil {
+		logger.Warn("failed to clean up upload directory", "error", err)
+	}
+
+	logger.Info("server stopped")
 }

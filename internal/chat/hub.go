@@ -9,11 +9,12 @@ import (
 )
 
 type Hub struct {
-	mu          sync.RWMutex
-	rooms       map[uint]*Room
-	roomCounter int
-	roomMu      sync.Mutex
-	logger      *slog.Logger
+	mu           sync.RWMutex
+	rooms        map[uint]*Room
+	roomCounter  int
+	roomMu       sync.Mutex
+	onRoomDelete func(roomID uint)
+	logger       *slog.Logger
 }
 
 func NewHub(logger *slog.Logger) *Hub {
@@ -81,11 +82,35 @@ func (h *Hub) GetAllRoomIDs() []model.RoomResponse {
 	return rooms
 }
 
+func (h *Hub) SetOnRoomDelete(fn func(roomID uint)) {
+	h.onRoomDelete = fn
+}
+
 func (h *Hub) DeleteRoom(id uint) {
 	h.logger.Info("deleting room", "roomID", id)
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	delete(h.rooms, id)
+	h.mu.Unlock()
+
+	if h.onRoomDelete != nil {
+		h.onRoomDelete(id)
+	}
+}
+
+func (h *Hub) ShutdownAll() {
+	h.mu.RLock()
+	snapshot := make([]*Room, 0, len(h.rooms))
+	for _, r := range h.rooms {
+		snapshot = append(snapshot, r)
+	}
+	h.mu.RUnlock()
+
+	for _, r := range snapshot {
+		r.shutdownOnce.Do(func() { close(r.shutdown) })
+		<-r.closed
+		r.DisconnectAllClients()
+		h.DeleteRoom(r.id)
+	}
 }
 
 func (h *Hub) GetAllUsersWithRooms() []model.UserWithRoom {
