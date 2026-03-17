@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.0](https://github.com/choffmann/chat-room/compare/v0.1.0...v0.2.0) (2026-03-17)
+
+
+### Features
+
+* add API versioning with /api/v1 prefix ([e175f6b](https://github.com/choffmann/chat-room/commit/e175f6b1f325e3c3751d7124d11cdc8c2b3143b8))
+* add binary file upload via WebSocket ([2035a5a](https://github.com/choffmann/chat-room/commit/2035a5ab7e7118da3ab55888f4d8886542f22993))
+* add Swagger/OpenAPI documentation via swaggo/swag ([4765957](https://github.com/choffmann/chat-room/commit/4765957e4557ef6c6df747de614ecf1fbc6fb1ab))
+* allow custom message types ([5a6c708](https://github.com/choffmann/chat-room/commit/5a6c7083fc6cc9c310bf4f5a1ca8292c97293d91))
+
+
+### Bug Fixes
+
+* return empty array if no user registered instead of null ([b463029](https://github.com/choffmann/chat-room/commit/b4630290846bb8d7461b4d4d1c57fab5913545f0))
+
 ## 0.1.0 (2026-03-07)
 
 
