@@ -25,7 +25,7 @@ import (
 // @description     A lightweight real-time chat backend written in Go. The server manages ephemeral chat rooms where clients connect via WebSocket to exchange messages. Rooms are created on-demand and automatically deleted after 3 hours of inactivity.
 // @description
 // @description     ## Additional Info
-// @description     Many resources (rooms, users, messages) carry an `additionalInfo` field. This is a free-form JSON object that the server stores as-is — it has no predefined schema and is never validated or interpreted by the backend.
+// @description     Many resources (rooms, users, messages) carry an `additionalInfo` field. This is a free-form JSON object that the server stores as-is - it has no predefined schema and is never validated or interpreted by the backend.
 // @description
 // @description     Use it to attach arbitrary metadata to any resource, for example:
 // @description     - **Rooms:** theme, description, language, or feature flags for your UI.
@@ -33,7 +33,7 @@ import (
 // @description     - **Messages:** formatting hints, link previews, or custom reaction data.
 // @description
 // @description     The field is always optional. If omitted it defaults to an empty object (`{}`). On `PATCH` requests the provided keys are merged into the existing object; on `PUT` the entire object is replaced.
-// @host            localhost:8080
+// @host            https://chat.homebin.dev
 // @BasePath        /api/v1
 func main() {
 	if baseURL := config.BaseURL(); baseURL != "" {
