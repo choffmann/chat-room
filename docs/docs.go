@@ -1170,11 +1170,11 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8080",
+	Host:             "https://chat.homebin.dev",
 	BasePath:         "/api/v1",
 	Schemes:          []string{},
 	Title:            "Chat Room API",
-	Description:      "A lightweight real-time chat backend written in Go. The server manages ephemeral chat rooms where clients connect via WebSocket to exchange messages. Rooms are created on-demand and automatically deleted after 3 hours of inactivity.\n\n## Additional Info\nMany resources (rooms, users, messages) carry an `additionalInfo` field. This is a free-form JSON object that the server stores as-is — it has no predefined schema and is never validated or interpreted by the backend.\n\nUse it to attach arbitrary metadata to any resource, for example:\n- **Rooms:** theme, description, language, or feature flags for your UI.\n- **Users:** avatar URL, bio, status text, or client-specific preferences.\n- **Messages:** formatting hints, link previews, or custom reaction data.\n\nThe field is always optional. If omitted it defaults to an empty object (`{}`). On `PATCH` requests the provided keys are merged into the existing object; on `PUT` the entire object is replaced.",
+	Description:      "A lightweight real-time chat backend written in Go. The server manages ephemeral chat rooms where clients connect via WebSocket to exchange messages. Rooms are created on-demand and automatically deleted after 3 hours of inactivity.\n\n## Additional Info\nMany resources (rooms, users, messages) carry an `additionalInfo` field. This is a free-form JSON object that the server stores as-is - it has no predefined schema and is never validated or interpreted by the backend.\n\nUse it to attach arbitrary metadata to any resource, for example:\n- **Rooms:** theme, description, language, or feature flags for your UI.\n- **Users:** avatar URL, bio, status text, or client-specific preferences.\n- **Messages:** formatting hints, link previews, or custom reaction data.\n\nThe field is always optional. If omitted it defaults to an empty object (`{}`). On `PATCH` requests the provided keys are merged into the existing object; on `PUT` the entire object is replaced.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

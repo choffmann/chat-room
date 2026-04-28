@@ -213,14 +213,14 @@ definitions:
           $ref: '#/definitions/UserWithRoom'
         type: array
     type: object
-host: localhost:8080
+host: https://chat.homebin.dev
 info:
   contact: {}
   description: |-
     A lightweight real-time chat backend written in Go. The server manages ephemeral chat rooms where clients connect via WebSocket to exchange messages. Rooms are created on-demand and automatically deleted after 3 hours of inactivity.
 
     ## Additional Info
-    Many resources (rooms, users, messages) carry an `additionalInfo` field. This is a free-form JSON object that the server stores as-is — it has no predefined schema and is never validated or interpreted by the backend.
+    Many resources (rooms, users, messages) carry an `additionalInfo` field. This is a free-form JSON object that the server stores as-is - it has no predefined schema and is never validated or interpreted by the backend.
 
     Use it to attach arbitrary metadata to any resource, for example:
     - **Rooms:** theme, description, language, or feature flags for your UI.
