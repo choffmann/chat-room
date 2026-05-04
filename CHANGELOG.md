@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/choffmann/chat-room/compare/v0.2.0...v0.2.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* **swagger:** change hardcoded localhost baseurl to prod server url ([d316f47](https://github.com/choffmann/chat-room/commit/d316f4779e6635f03fc7ac2280df601f6dd931ff))
+
 ## [0.2.0](https://github.com/choffmann/chat-room/compare/v0.1.0...v0.2.0) (2026-03-17)
 
 
