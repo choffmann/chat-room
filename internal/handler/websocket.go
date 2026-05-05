@@ -117,9 +117,11 @@ func (h *Handler) wsHandler(w http.ResponseWriter, r *http.Request) {
 			Timestamp:   timestamp,
 			User:        h.systemUser,
 			AdditionalInfo: model.AdditionalInfo{
+				"self":       true,
+				"joinedUser": user,
+				// Deprecated: kept for pre-2.0 clients, remove in v2
 				"joinedUserId":   user.ID.String(),
 				"joinedUserName": displayName,
-				"self":           true,
 			},
 		}
 		selfJoinBytes, _ := json.Marshal(selfJoin)
@@ -138,6 +140,8 @@ func (h *Handler) wsHandler(w http.ResponseWriter, r *http.Request) {
 		Timestamp:   timestamp,
 		User:        h.systemUser,
 		AdditionalInfo: model.AdditionalInfo{
+			"joinedUser": user,
+			// Deprecated: kept for pre-2.0 clients, remove in v2
 			"joinedUserId":   user.ID.String(),
 			"joinedUserName": displayName,
 		},
