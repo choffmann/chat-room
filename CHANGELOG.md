@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/choffmann/chat-room/compare/v0.2.1...v0.3.0) (2026-05-05)
+
+
+### Features
+
+* **websocket:** expose full user object in join events ([9434f1e](https://github.com/choffmann/chat-room/commit/9434f1e0f049878d1a260b22dd1ab0b0fe11a96b))
+
 ## [0.2.1](https://github.com/choffmann/chat-room/compare/v0.2.0...v0.2.1) (2026-05-04)
 
 
