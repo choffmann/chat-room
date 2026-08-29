@@ -1,7 +1,7 @@
 #############################################
 # Preparer go
 #############################################
-FROM golang:1.25-alpine AS preparer_go
+FROM golang:1.27-alpine AS preparer_go
 
 WORKDIR /app/build
 
